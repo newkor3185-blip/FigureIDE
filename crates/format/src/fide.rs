@@ -490,12 +490,11 @@ impl FideProject {
         }
 
         // If no figures list in manifest, try primary_figure
-        if figures.is_empty() && !manifest.primary_figure.is_empty() {
-            if let Some(file_bytes) = archive.read(&manifest.primary_figure, MAX_ARCHIVE_ENTRY_BYTES)? {
+        if figures.is_empty() && !manifest.primary_figure.is_empty()
+            && let Some(file_bytes) = archive.read(&manifest.primary_figure, MAX_ARCHIVE_ENTRY_BYTES)? {
                 total_expanded_bytes = total_expanded_bytes.saturating_add(file_bytes.len());
                 let native_doc = crate::load(&file_bytes).map_err(|e| FideError::CorruptFigure(manifest.primary_figure.clone(), e.to_string()))?;
                 figures.push(FideFigure { id: "figure_001".into(), name: "Figure 1".into(), doc: native_doc });
-            }
         }
 
         // 4. Read scripts
@@ -554,12 +553,10 @@ impl FideProject {
         // 6. Read extra assets
         let mut assets = BTreeMap::new();
         for name in archive.entry_names() {
-            if let Some(asset_subpath) = name.strip_prefix("assets/") {
-                if !asset_subpath.is_empty() && is_safe_entry_path(name) {
-                    if let Some(bytes) = archive.read(name, MAX_ARCHIVE_ENTRY_BYTES)? {
-                        assets.insert(asset_subpath.to_string(), bytes);
-                    }
-                }
+            if let Some(asset_subpath) = name.strip_prefix("assets/")
+                && !asset_subpath.is_empty() && is_safe_entry_path(name)
+                && let Some(bytes) = archive.read(name, MAX_ARCHIVE_ENTRY_BYTES)? {
+                assets.insert(asset_subpath.to_string(), bytes);
             }
         }
 
@@ -646,11 +643,10 @@ pub fn check_destination_conflict(parent: &Path, name: &str) -> DestinationConfl
     if target.join("project.json").exists() {
         return DestinationConflict::ExistingFigureIDEProject(target);
     }
-    if target.is_dir() {
-        if let Ok(mut entries) = std::fs::read_dir(&target) {
+    if target.is_dir()
+        && let Ok(mut entries) = std::fs::read_dir(&target) {
             if entries.next().is_some() {
                 return DestinationConflict::DirectoryNotEmpty(target);
-            }
         }
     }
     DestinationConflict::None
@@ -898,31 +894,27 @@ pub fn load_project_folder(folder_path: &Path) -> Result<FideProjectFolder, Fide
         }
     }
 
-    if figures.is_empty() {
-        if let Some(ref af) = metadata.active_figure {
+    if figures.is_empty()
+        && let Some(ref af) = metadata.active_figure {
             let fig_path = base_dir.join(af);
             if fig_path.exists() {
                 let doc = load_fide_figure(&fig_path).map_err(|e| FideError::CorruptFigure(af.clone(), e.to_string()))?;
                 figures.push(FideFigure { id: "fig_1".into(), name: "Figure 1".into(), doc });
-            }
         }
     }
 
     // Load assets
     let mut assets = BTreeMap::new();
     let assets_dir = base_dir.join("assets");
-    if assets_dir.is_dir() {
-        if let Ok(entries) = std::fs::read_dir(assets_dir) {
+    if assets_dir.is_dir()
+        && let Ok(entries) = std::fs::read_dir(assets_dir) {
             for entry in entries.flatten() {
-                if entry.path().is_file() {
-                    if let Some(file_name) = entry.file_name().to_str() {
-                        if let Ok(data) = std::fs::read(entry.path()) {
-                            assets.insert(file_name.to_string(), data);
-                        }
-                    }
+                if entry.path().is_file()
+                    && let Some(file_name) = entry.file_name().to_str()
+                    && let Ok(data) = std::fs::read(entry.path()) {
+                    assets.insert(file_name.to_string(), data);
                 }
             }
-        }
     }
 
     Ok(FideProjectFolder { metadata, scripts, figures, assets })
