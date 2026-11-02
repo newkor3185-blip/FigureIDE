@@ -1,0 +1,11 @@
+FigureIDE icon assets (figureide.ico, figureide-app-icon.png,
+figureide-desktop-icon.png, and figureide-logo.png).
+
+The project user supplied these images, stated that they were generated with GPT,
+and authorized distribution under either the MIT License or the Apache License,
+Version 2.0, at the recipient's option. The full license texts are in
+LICENSE-MIT and LICENSE-APACHE at the repository root.
+
+This notice applies only to the four FigureIDE icon assets named above.
+The original VectorCraft artwork in this directory retains its own attribution
+in LICENSE.txt.

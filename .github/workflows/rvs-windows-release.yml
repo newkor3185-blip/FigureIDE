@@ -1,0 +1,251 @@
+name: FigureIDE Windows Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+      - 'rvs-v*'
+      - 'figureide-v*'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  windows-release:
+    runs-on: windows-latest
+    timeout-minutes: 120
+
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Set up R
+        uses: r-lib/actions/setup-r@v2
+        with:
+          r-version: 'release'
+
+      - name: Verify R & Install rendering packages (svglite, ggplot2)
+        shell: pwsh
+        run: |
+          Rscript --version
+          Rscript -e 'if (!requireNamespace("svglite", quietly = TRUE)) install.packages("svglite", repos = "https://cloud.r-project.org")'
+          Rscript -e 'if (!requireNamespace("ggplot2", quietly = TRUE)) install.packages("ggplot2", repos = "https://cloud.r-project.org")'
+
+      - name: Release-specific SVG smoke test
+        shell: pwsh
+        run: |
+          # Generate a deterministic ggplot and export via svglite
+          Rscript -e '
+            library(ggplot2)
+            p <- ggplot(mtcars, aes(wt, mpg)) + geom_point(colour = "#e41a1c", size = 2) + ggtitle("CI Smoke Test")
+            svglite::svglite("smoke_test.svg", width = 7, height = 5)
+            print(p)
+            dev.off()
+          '
+          if (-not (Test-Path "smoke_test.svg")) {
+            Write-Error "Smoke test SVG was not generated!"
+            exit 1
+          }
+          $svgContent = Get-Content "smoke_test.svg" -Raw
+          if ($svgContent.Length -lt 200) {
+            Write-Error "Smoke test SVG is unexpectedly small ($($svgContent.Length) bytes)"
+            exit 1
+          }
+          if (-not ($svgContent -match "<svg")) {
+            Write-Error "Smoke test SVG does not contain <svg root element"
+            exit 1
+          }
+          Write-Host "Smoke test SVG generated successfully: $($svgContent.Length) bytes"
+
+      - name: Build FigureIDE
+        shell: pwsh
+        run: cargo build --locked --release -p vectorcraft
+
+      - name: Create Windows ZIP
+        shell: pwsh
+        run: |
+          $isTag = "${{ github.ref }}".StartsWith("refs/tags/")
+          if ($isTag) {
+            $rawVer = "${{ github.ref_name }}"
+            if ($rawVer.StartsWith("rvs-v")) {
+              $ver = "v" + $rawVer.Substring(5)
+            } elseif ($rawVer.StartsWith("figureide-v")) {
+              $ver = "v" + $rawVer.Substring(11)
+            } else {
+              $ver = $rawVer
+            }
+          } else {
+            $shortSha = "${{ github.sha }}".Substring(0, 8)
+            $ver = "v0.1.0-beta.1-dev-$shortSha"
+          }
+
+          $folder = "FigureIDE-$ver-Windows-x64"
+          $inner = "$folder/FigureIDE"
+          New-Item -ItemType Directory -Force $inner | Out-Null
+
+          Copy-Item "target/release/vectorcraft.exe" "$inner/FigureIDE.exe"
+
+          if (Test-Path "LICENSE-MIT") {
+            Copy-Item "LICENSE-MIT" "$inner/LICENSE.txt"
+          } elseif (Test-Path "LICENSE-APACHE") {
+            Copy-Item "LICENSE-APACHE" "$inner/LICENSE.txt"
+          }
+
+          $commitSha = "${{ github.sha }}"
+          $buildDate = (Get-Date).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ")
+
+          @"
+==================================================
+FigureIDE (Windows Portable x64)
+==================================================
+
+Version: $ver
+Commit:  $commitSha
+Built:   $buildDate
+
+Portable Usage:
+---------------
+1. Extract this archive to any folder of your choice.
+2. Run FigureIDE.exe directly.
+   - No administrator privileges or system installer required.
+   - Runs independently without modifying system registry.
+
+Folder-Based FigureIDE Projects:
+--------------------------------
+FigureIDE uses folder-based projects containing:
+  <ProjectName>/
+  ├── project.json            # Project manifest and tab/view configuration
+  ├── scripts/                # Authoritative editable R scripts (*.R)
+  ├── workspace/              # R workspace snapshot (workspace.RData)
+  ├── figures/                # Individual figure documents (*.fide)
+  └── assets/                 # Embedded or referenced assets
+
+Opening Projects & Documents:
+-----------------------------
+- Open Project Folder:
+    Drag and drop a project folder onto FigureIDE.exe, or run:
+      FigureIDE.exe "C:\Path\To\ProjectFolder"
+    Or select File ▸ Open Project in the application.
+- Open Standalone Figure (.fide):
+    Drag and drop a .fide figure document onto FigureIDE.exe, or run:
+      FigureIDE.exe "C:\Path\To\Figure.fide"
+- Offline Art Viewing:
+    Saved figures and Hybrid Linked Plots display instantly with full fidelity
+    even on systems without R installed.
+
+Explicit Save / Load R Workspace:
+---------------------------------
+- FigureIDE separates document vector editing from R memory persistence.
+- To save your active R session workspace (.GlobalEnv):
+    Click 'Save R Workspace' in the Environment panel or File ▸ Save R Workspace.
+    Saved to workspace/workspace.RData atomically.
+- To restore your R session:
+    Click 'Load R Workspace' in the Environment panel or File ▸ Load R Workspace.
+    Includes collision detection and safe reconnection.
+
+R Requirements & Diagnostics:
+-----------------------------
+To run analysis scripts or re-render linked figures:
+1. Install R (>= 4.0 recommended) from https://cloud.r-project.org
+2. Install rendering dependencies:
+     install.packages(c("svglite", "ggplot2"), repos = "https://cloud.r-project.org")
+3. Use the Environment panel or Packages tab to inspect installed packages.
+
+Optional .fide File Association:
+--------------------------------
+This is a portable ZIP distribution. It does not touch your Windows registry
+unless you choose to run the optional association helper:
+- register-fide-association.cmd: Associates .fide figure files with this executable.
+- unregister-fide-association.cmd: Removes the .fide association.
+
+Issues & Releases:
+------------------
+GitHub Releases: https://github.com/newkor3185-blip/R_vector_studio/releases
+GitHub Issues:   https://github.com/newkor3185-blip/R_vector_studio/issues
+"@ | Set-Content "$inner/README.txt" -Encoding UTF8
+
+          @"
+commit=$commitSha
+version=$ver
+build_date=$buildDate
+target=x86_64-pc-windows-msvc
+"@ | Set-Content "$inner/BUILD_INFO.txt" -Encoding UTF8
+
+          @"
+@echo off
+REM Register .fide file association with this portable FigureIDE executable
+assoc .fide=FigureIDE.Figure
+ftype FigureIDE.Figure="%~dp0FigureIDE.exe" "%%1"
+echo .fide figure file association registered to %~dp0FigureIDE.exe
+pause
+"@ | Set-Content "$inner/register-fide-association.cmd" -Encoding ASCII
+
+          @"
+@echo off
+REM Remove .fide file association
+assoc .fide=
+ftype FigureIDE.Figure=
+echo .fide figure file association removed.
+pause
+"@ | Set-Content "$inner/unregister-fide-association.cmd" -Encoding ASCII
+
+          Compress-Archive -Path "$folder/*" -DestinationPath "$folder.zip" -Force
+
+          "ZIP_FILE=$folder.zip" | Out-File -FilePath $env:GITHUB_ENV -Append
+          "PACKAGE_FOLDER=$folder" | Out-File -FilePath $env:GITHUB_ENV -Append
+          "RELEASE_VERSION=$ver" | Out-File -FilePath $env:GITHUB_ENV -Append
+
+      - name: Validate Package & Startup Smoke Test
+        shell: pwsh
+        run: |
+          $zipPath = $env:ZIP_FILE
+          if (-not (Test-Path $zipPath)) {
+            Write-Error "Expected ZIP $zipPath does not exist!"
+            exit 1
+          }
+
+          # Extract to an unrelated temporary directory to test portable extraction
+          $testExtract = Join-Path $env:TEMP "fig_extract_test_$(Get-Random)"
+          Expand-Archive -Path $zipPath -DestinationPath $testExtract -Force
+
+          $exe = Get-ChildItem -Path $testExtract -Filter "FigureIDE.exe" -Recurse | Select-Object -First 1
+          if ($null -eq $exe) {
+            Write-Error "FigureIDE.exe missing from extracted archive!"
+            exit 1
+          }
+
+          $readme = Get-ChildItem -Path $testExtract -Filter "README.txt" -Recurse | Select-Object -First 1
+          if ($null -eq $readme) {
+            Write-Error "README.txt missing from extracted archive!"
+            exit 1
+          }
+
+          # Verify standalone invocation (version / help)
+          & $exe.FullName --help
+          & $exe.FullName --version
+
+          Remove-Item -Recurse -Force $testExtract
+          Write-Host "Portable package validation passed."
+
+      - name: Upload ZIP as workflow artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: FigureIDE-Windows-x64
+          path: ${{ env.ZIP_FILE }}
+          if-no-files-found: error
+
+      - name: Publish GitHub Release
+        if: startsWith(github.ref, 'refs/tags/')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: pwsh
+        run: |
+          gh release create "${{ github.ref_name }}" `
+            "${{ env.ZIP_FILE }}" `
+            --title "FigureIDE ${{ github.ref_name }}" `
+            --notes "FigureIDE Windows portable release (${{ github.ref_name }}). Source commit: ${{ github.sha }}" `
+            --prerelease

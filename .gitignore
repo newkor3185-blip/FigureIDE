@@ -1,0 +1,27 @@
+*~
+plan/
+/target
+/dist
+/corpus
+/log
+.DS_Store
+# A craft-fonts checkout for CRAFT_FONTS_DIR (CI and release workflows check it out here)
+/craft-fonts
+# Rust build output
+/target/
+
+# R local session files
+.Rhistory
+.RData
+.Ruserdata
+
+# Temporary files
+*.tmp
+*.log
+
+# Environment secrets
+.env
+.env.local
+
+# Editor-specific local files
+.vscode/settings.json
