@@ -649,10 +649,9 @@ pub fn check_destination_conflict(parent: &Path, name: &str) -> DestinationConfl
     }
     if target.is_dir()
         && let Ok(mut entries) = std::fs::read_dir(&target)
+        && entries.next().is_some()
     {
-        if entries.next().is_some() {
-            return DestinationConflict::DirectoryNotEmpty(target);
-        }
+        return DestinationConflict::DirectoryNotEmpty(target);
     }
     DestinationConflict::None
 }
