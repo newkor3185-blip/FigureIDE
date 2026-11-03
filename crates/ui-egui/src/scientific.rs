@@ -3872,8 +3872,14 @@ mod tests {
         let rendered = |action: PanelAction| Ok(super::RenderedPlot { variable: "plot_A".into(), svg: column_plot_svg(), plots: Vec::new(), action });
         let original_document = app.session.doc().unwrap().doc.clone();
         let wrong_child = PanelAction::Refresh { panel_id: panel.panel_id, generated_id: panel.generated_id + 1, width_mm: 70.0, height_mm: 50.0 };
-        app.scientific._tx.send(RMessage::Rendered(panel.document_uid, 0, "plot_A".into(), Box::new((wrong_child.clone(), rendered(wrong_child))))).unwrap();
-        app.scientific._tx.send(RMessage::Rendered(panel.document_uid, 0, "other_plot".into(), Box::new((action.clone(), rendered(action.clone()))))).unwrap();
+        app.scientific
+            ._tx
+            .send(RMessage::Rendered(panel.document_uid, 0, "plot_A".into(), Box::new((wrong_child.clone(), rendered(wrong_child)))))
+            .unwrap();
+        app.scientific
+            ._tx
+            .send(RMessage::Rendered(panel.document_uid, 0, "other_plot".into(), Box::new((action.clone(), rendered(action.clone())))))
+            .unwrap();
         poll_messages(&mut app);
         assert_eq!(app.session.doc().unwrap().doc, original_document);
 
@@ -3881,7 +3887,10 @@ mod tests {
         app.run("edit.undo", serde_json::json!({})).unwrap();
         assert_eq!(app.scientific.render_epoch.get(&panel.document_uid), Some(&1));
         let after_undo = app.session.doc().unwrap().doc.clone();
-        app.scientific._tx.send(RMessage::Rendered(panel.document_uid, 0, "plot_A".into(), Box::new((action.clone(), rendered(action.clone()))))).unwrap();
+        app.scientific
+            ._tx
+            .send(RMessage::Rendered(panel.document_uid, 0, "plot_A".into(), Box::new((action.clone(), rendered(action.clone())))))
+            .unwrap();
         poll_messages(&mut app);
         assert_eq!(app.session.doc().unwrap().doc, after_undo);
 
@@ -3893,7 +3902,10 @@ mod tests {
         super::start_next_refresh(&mut app);
         assert!(!app.scientific.running);
         assert_eq!(app.scientific.pending_refresh.len(), 1, "another document's refresh must remain queued");
-        app.scientific._tx.send(RMessage::Rendered(panel.document_uid, 0, "plot_A".into(), Box::new((action.clone(), rendered(action.clone()))))).unwrap();
+        app.scientific
+            ._tx
+            .send(RMessage::Rendered(panel.document_uid, 0, "plot_A".into(), Box::new((action.clone(), rendered(action.clone())))))
+            .unwrap();
         poll_messages(&mut app);
         assert_eq!(app.session.doc().unwrap().doc, other_document);
     }
