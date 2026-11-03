@@ -78,40 +78,38 @@ pub(super) fn show_source_editor(workspace: &mut Workspace, ui: &mut egui::Ui, h
                                 } else if escape {
                                     workspace.completion = None;
                                     ui.memory_mut(|m| m.request_focus(editor_id));
-                                } else if accept {
-                                    if let Some(active) = workspace.completion.take() {
-                                        if let Some(candidate) = active.candidates.get(active.selected).cloned() {
-                                            let new_cursor_idx = {
-                                                let text = &mut workspace.scripts[script_idx].text;
-                                                let mut state = egui::TextEdit::load_state(ui.ctx(), editor_id).unwrap_or_default();
-                                                let before_range = state.cursor.char_range().unwrap_or_else(|| {
-                                                    egui::text::CCursorRange::one(egui::text::CCursor::new(active.context.replace_end_char))
-                                                });
-                                                let mut undoer = state.undoer();
-                                                undoer.add_undo(&(before_range, text.clone()));
-                                                let idx = crate::r_editor::apply_completion(text, &active.context, &candidate);
-                                                let after_range = egui::text::CCursorRange::one(egui::text::CCursor::new(idx));
-                                                undoer.add_undo(&(after_range, text.clone()));
-                                                state.set_undoer(undoer);
-                                                state.cursor.set_char_range(Some(after_range));
-                                                state.store(ui.ctx(), editor_id);
-                                                idx
-                                            };
+                                } else if accept && let Some(active) = workspace.completion.take() {
+                                    if let Some(candidate) = active.candidates.get(active.selected).cloned() {
+                                        let new_cursor_idx = {
+                                            let text = &mut workspace.scripts[script_idx].text;
+                                            let mut state = egui::TextEdit::load_state(ui.ctx(), editor_id).unwrap_or_default();
+                                            let before_range = state.cursor.char_range().unwrap_or_else(|| {
+                                                egui::text::CCursorRange::one(egui::text::CCursor::new(active.context.replace_end_char))
+                                            });
+                                            let mut undoer = state.undoer();
+                                            undoer.add_undo(&(before_range, text.clone()));
+                                            let idx = crate::r_editor::apply_completion(text, &active.context, &candidate);
+                                            let after_range = egui::text::CCursorRange::one(egui::text::CCursor::new(idx));
+                                            undoer.add_undo(&(after_range, text.clone()));
+                                            state.set_undoer(undoer);
+                                            state.cursor.set_char_range(Some(after_range));
+                                            state.store(ui.ctx(), editor_id);
+                                            idx
+                                        };
 
-                                            if candidate.kind == crate::r_editor::CompletionCandidateKind::Directory {
-                                                let script_text = workspace.scripts[script_idx].text.clone();
-                                                if let Some(new_ctx) = crate::r_editor::completion_context_at(&script_text, new_cursor_idx) {
-                                                    let candidates = build_completion_candidates(workspace, active_id, &script_text, &new_ctx);
-                                                    if !candidates.is_empty() {
-                                                        workspace.completion = Some(ActiveCompletion {
-                                                            script_id: active_id,
-                                                            source_revision: script_text,
-                                                            context: new_ctx,
-                                                            candidates,
-                                                            selected: 0,
-                                                            scroll_to_selected: true,
-                                                        });
-                                                    }
+                                        if candidate.kind == crate::r_editor::CompletionCandidateKind::Directory {
+                                            let script_text = workspace.scripts[script_idx].text.clone();
+                                            if let Some(new_ctx) = crate::r_editor::completion_context_at(&script_text, new_cursor_idx) {
+                                                let candidates = build_completion_candidates(workspace, active_id, &script_text, &new_ctx);
+                                                if !candidates.is_empty() {
+                                                    workspace.completion = Some(ActiveCompletion {
+                                                        script_id: active_id,
+                                                        source_revision: script_text,
+                                                        context: new_ctx,
+                                                        candidates,
+                                                        selected: 0,
+                                                        scroll_to_selected: true,
+                                                    });
                                                 }
                                             }
                                         }
@@ -785,25 +783,23 @@ pub(crate) fn request_completion_metadata(
                         let mut parts = line.split('\t');
                         if let (Some(sym_hex), Some(kind_hex), Some(type_hex), Some(sig_hex)) =
                             (parts.next(), parts.next(), parts.next(), parts.next())
-                        {
-                            if let (Some(sym), Some(kind), Some(detail), Some(sig)) = (
-                                crate::r_session::decode_hex(sym_hex),
-                                crate::r_session::decode_hex(kind_hex),
-                                crate::r_session::decode_hex(type_hex),
-                                crate::r_session::decode_hex(sig_hex),
-                            ) {
-                                items.push(crate::r_editor::CompletionCandidate {
-                                    name: sym,
-                                    kind: if kind == "function" {
-                                        crate::r_editor::CompletionCandidateKind::Function
-                                    } else {
-                                        crate::r_editor::CompletionCandidateKind::Variable
-                                    },
-                                    signature: if sig.is_empty() { None } else { Some(sig) },
-                                    detail,
-                                    source: if is_internal { format!("{pkg}:::") } else { pkg.clone() },
-                                });
-                            }
+                            && let (Some(sym), Some(kind), Some(detail), Some(sig)) = (
+                            crate::r_session::decode_hex(sym_hex),
+                            crate::r_session::decode_hex(kind_hex),
+                            crate::r_session::decode_hex(type_hex),
+                            crate::r_session::decode_hex(sig_hex),
+                        ) {
+                            items.push(crate::r_editor::CompletionCandidate {
+                                name: sym,
+                                kind: if kind == "function" {
+                                    crate::r_editor::CompletionCandidateKind::Function
+                                } else {
+                                    crate::r_editor::CompletionCandidateKind::Variable
+                                },
+                                signature: if sig.is_empty() { None } else { Some(sig) },
+                                detail,
+                                source: if is_internal { format!("{pkg}:::") } else { pkg.clone() },
+                            });
                         }
                     }
                     let _ = tx.send(RMessage::CompletionMetadata {
