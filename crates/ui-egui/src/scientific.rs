@@ -508,7 +508,7 @@ impl Workspace {
             let p = std::path::Path::new(project_path);
             let base = if p.is_dir() {
                 p
-            } else if p.extension().map_or(false, |ext| ext.eq_ignore_ascii_case("fide")) {
+            } else if p.extension().is_some_and(|ext| ext.eq_ignore_ascii_case("fide")) {
                 p.parent().unwrap_or(p)
             } else {
                 p
