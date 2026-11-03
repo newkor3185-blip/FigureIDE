@@ -122,15 +122,15 @@ pub(super) fn show_source_editor(workspace: &mut Workspace, ui: &mut egui::Ui, h
                                     let mut found = None;
                                     let mut found_idx = None;
                                     for (idx, event) in input.events.iter().enumerate() {
-                                        if let egui::Event::Text(text) = event {
-                                            if text.len() == 1 {
+                                        if let egui::Event::Text(text) = event
+                                            && text.len() == 1
+                                        {
                                                 let c = text.chars().next().unwrap_or(' ');
                                                 if crate::r_editor::is_open_delimiter(c) || crate::r_editor::is_close_delimiter(c) {
                                                     found = Some(c);
                                                     found_idx = Some(idx);
                                                     break;
                                                 }
-                                            }
                                         }
                                     }
                                     if let Some(idx) = found_idx {
@@ -637,9 +637,10 @@ pub(crate) fn build_completion_candidates(
                     });
                 }
             }
-            if let Some((viewer_name, page)) = &workspace.viewer {
-                if viewer_name == object {
-                    for (col_name, col_type) in &page.columns {
+            if let Some((viewer_name, page)) = &workspace.viewer
+                && viewer_name == object
+            {
+                for (col_name, col_type) in &page.columns {
                         list.push(crate::r_editor::CompletionCandidate {
                             name: col_name.clone(),
                             kind: crate::r_editor::CompletionCandidateKind::Column,
@@ -647,7 +648,6 @@ pub(crate) fn build_completion_candidates(
                             detail: col_type.clone(),
                             source: object.clone(),
                         });
-                    }
                 }
             }
             let (_script_syms, script_cols, _) = crate::r_editor::extract_script_symbols(source);
@@ -742,17 +742,16 @@ pub(crate) fn request_completion_metadata(
                 let tx = workspace._tx.clone();
                 let ctx_repaint = workspace.repaint_ctx.clone();
                 let obj = object.clone();
-                if let Err(_) = std::thread::Builder::new().name("r-completion-meta".into()).spawn(move || {
+                if std::thread::Builder::new().name("r-completion-meta".into()).spawn(move || {
                     let Ok(mut session) = session.try_lock() else { return };
                     let output = session.completion_metadata(&format!("MEMBER\t{obj}")).unwrap_or_default();
                     let mut cols = Vec::new();
                     for line in output.lines() {
                         let mut parts = line.split('\t');
-                        if let (Some(name_hex), Some(type_hex)) = (parts.next(), parts.next()) {
-                            if let (Some(col_name), Some(col_type)) = (crate::r_session::decode_hex(name_hex), crate::r_session::decode_hex(type_hex))
-                            {
-                                cols.push((col_name, col_type));
-                            }
+                        if let (Some(name_hex), Some(type_hex)) = (parts.next(), parts.next())
+                            && let (Some(col_name), Some(col_type)) = (crate::r_session::decode_hex(name_hex), crate::r_session::decode_hex(type_hex))
+                        {
+                            cols.push((col_name, col_type));
                         }
                     }
                     let _ = tx.send(RMessage::CompletionMetadata {
@@ -764,7 +763,7 @@ pub(crate) fn request_completion_metadata(
                     if let Some(ctx) = ctx_repaint {
                         ctx.request_repaint();
                     }
-                }) {
+                }).is_err() {
                     workspace.completion_request_in_flight = false;
                 }
             }
@@ -778,7 +777,7 @@ pub(crate) fn request_completion_metadata(
                 let ctx_repaint = workspace.repaint_ctx.clone();
                 let pkg = package.clone();
                 let is_internal = *internal;
-                if let Err(_) = std::thread::Builder::new().name("r-completion-meta".into()).spawn(move || {
+                if std::thread::Builder::new().name("r-completion-meta".into()).spawn(move || {
                     let Ok(mut session) = session.try_lock() else { return };
                     let output = session.completion_metadata(&format!("NS\t{pkg}\t{}", if is_internal { 1 } else { 0 })).unwrap_or_default();
                     let mut items = Vec::new();
@@ -816,7 +815,7 @@ pub(crate) fn request_completion_metadata(
                     if let Some(ctx) = ctx_repaint {
                         ctx.request_repaint();
                     }
-                }) {
+                }).is_err() {
                     workspace.completion_request_in_flight = false;
                 }
             }
@@ -1477,10 +1476,14 @@ pub(crate) fn find_top_level_expressions(script: &str) -> Vec<(usize, usize)> {
             && last_code_token == ")"
             && delim_stack.is_empty();
 
-        if delim_stack.is_empty() && in_string.is_none() && !is_continuation_token && !next_continues && !control_clause_without_body {
-            if let Some(start) = current_start.take() {
-                expressions.push((start, line_idx));
-            }
+        if delim_stack.is_empty()
+            && in_string.is_none()
+            && !is_continuation_token
+            && !next_continues
+            && !control_clause_without_body
+            && let Some(start) = current_start.take()
+        {
+            expressions.push((start, line_idx));
         }
     }
 
