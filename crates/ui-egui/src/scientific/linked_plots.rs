@@ -100,10 +100,10 @@ fn linked_panel_entries(app: &mut crate::VectorcraftApp, ui: &mut egui::Ui) {
                 });
             }
             ui.horizontal_wrapped(|ui| {
-                if panel_action(ui, "Unlink", true, false).on_hover_text("Remove the R association and keep the vector artwork.").clicked() {
-                    if let Err(error) = app.run("ui.unlinkRPanel", serde_json::json!({"panel": panel.panel_id})) {
-                        app.scientific.r_status = format!("Could not unlink panel: {error}");
-                    }
+                if panel_action(ui, "Unlink", true, false).on_hover_text("Remove the R association and keep the vector artwork.").clicked()
+                    && let Err(error) = app.run("ui.unlinkRPanel", serde_json::json!({"panel": panel.panel_id}))
+                {
+                    app.scientific.r_status = format!("Could not unlink panel: {error}");
                 }
                 if app.scientific.delete_artwork_confirmation == Some(panel.panel_id) {
                     ui.label("Delete this panel's vector artwork?");
