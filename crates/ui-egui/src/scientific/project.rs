@@ -1997,8 +1997,10 @@ mod tests {
                 doc_uid,
                 epoch,
                 "plot_A".into(),
-                super::super::PanelAction::Refresh { panel_id: 1, generated_id: 2, width_mm: 100.0, height_mm: 75.0 },
-                Err("Evaluation error in ggplot".into()),
+                Box::new((
+                    super::super::PanelAction::Refresh { panel_id: 1, generated_id: 2, width_mm: 100.0, height_mm: 75.0 },
+                    Err("Evaluation error in ggplot".into()),
+                )),
             ))
             .unwrap();
         super::super::poll_messages(&mut app);
@@ -2024,13 +2026,15 @@ mod tests {
                 doc_uid,
                 0,
                 "plot_A".into(),
-                super::super::PanelAction::Refresh { panel_id: 1, generated_id: 2, width_mm: 100.0, height_mm: 75.0 },
-                Ok(super::super::RenderedPlot {
+                Box::new((
+                    super::super::PanelAction::Refresh { panel_id: 1, generated_id: 2, width_mm: 100.0, height_mm: 75.0 },
+                    Ok(super::super::RenderedPlot {
                     variable: "plot_A".into(),
                     svg: "<svg></svg>".into(),
                     plots: vec![],
                     action: super::super::PanelAction::Refresh { panel_id: 1, generated_id: 2, width_mm: 100.0, height_mm: 75.0 },
-                }),
+                    }),
+                )),
             ))
             .unwrap();
         super::super::poll_messages(&mut app);
