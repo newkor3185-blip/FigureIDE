@@ -1653,7 +1653,7 @@ mod tests {
     }
 
     fn add_test_panel(app: &mut VectorcraftApp, panel_id: u64, generated_id: u64, r_variable: &str, label: &str, width_mm: f64, height_mm: f64) {
-        add_test_panel_with_style(app, panel_id, generated_id, r_variable, label, width_mm, height_mm, GraphStyle::default(), false);
+        add_test_panel_with_style(app, panel_id, generated_id, r_variable, label, (width_mm, height_mm), (GraphStyle::default(), false));
     }
 
     fn add_test_panel_with_style(
@@ -1662,11 +1662,11 @@ mod tests {
         generated_id: u64,
         r_variable: &str,
         label: &str,
-        width_mm: f64,
-        height_mm: f64,
-        graph_style: GraphStyle,
-        small_figure_typography: bool,
+        dimensions_mm: (f64, f64),
+        appearance: (GraphStyle, bool),
     ) {
+        let (width_mm, height_mm) = dimensions_mm;
+        let (graph_style, small_figure_typography) = appearance;
         let doc_uid = app.session.active().map(|d| d.uid).unwrap_or(1);
         let panel = RLinkedPanel {
             panel_id,
@@ -2048,7 +2048,7 @@ mod tests {
             axis_x_line_mm: Some(0.8),
             ..Default::default()
         };
-        add_test_panel_with_style(&mut app, 10, 11, "plot_A", "A", 125.0, 85.0, style, true);
+        add_test_panel_with_style(&mut app, 10, 11, "plot_A", "A", (125.0, 85.0), (style, true));
 
         let project = build_fide_project(&app).expect("build");
         let bytes = project.save_to_bytes().expect("save");
@@ -2523,10 +2523,10 @@ mod tests {
             axis_x_line_mm: Some(0.6),
             ..Default::default()
         };
-        add_test_panel_with_style(&mut app, 100, 101, "p_pca", "A", 90.0, 70.0, style_pca, true);
+        add_test_panel_with_style(&mut app, 100, 101, "p_pca", "A", (90.0, 70.0), (style_pca, true));
 
         let style_umap = GraphStyle { plot_title_pt: Some(16.0), ..Default::default() };
-        add_test_panel_with_style(&mut app, 200, 201, "p_umap", "B", 100.0, 80.0, style_umap, false);
+        add_test_panel_with_style(&mut app, 200, 201, "p_umap", "B", (100.0, 80.0), (style_umap, false));
 
         add_test_panel(&mut app, 300, 301, "p_volcano", "C", 85.0, 65.0);
 
