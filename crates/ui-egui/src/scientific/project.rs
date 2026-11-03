@@ -1378,7 +1378,8 @@ mod tests {
             doc.insert(layer_id, usize::MAX, group).unwrap();
         }
 
-        let project_path = std::env::temp_dir().join("test_hybrid_preview.fide");
+        let project_path = std::env::temp_dir().join(format!("test_hybrid_preview_{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&project_path);
         save_project_to_path(&mut app, &project_path.to_string_lossy(), None).expect("save project");
 
         let mut reopened = make_test_app();
@@ -1397,7 +1398,7 @@ mod tests {
         });
         assert_eq!(placed_count, 1);
 
-        let _ = std::fs::remove_file(project_path);
+        let _ = std::fs::remove_dir_all(project_path);
     }
 
     // 4. GraphStyle overrides persistence
@@ -1437,7 +1438,8 @@ mod tests {
         app.run("file.new", json!({"width": "210 mm", "height": "297 mm"})).unwrap();
         app.run("shape.rectangle", json!({"x": 10.0, "y": 10.0, "width": 50.0, "height": 30.0})).unwrap();
 
-        let project_path = std::env::temp_dir().join("test_manual_edit.fide");
+        let project_path = std::env::temp_dir().join(format!("test_manual_edit_{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&project_path);
         save_project_to_path(&mut app, &project_path.to_string_lossy(), None).expect("save project");
 
         let mut reopened = make_test_app();
@@ -1452,7 +1454,7 @@ mod tests {
         });
         assert!(rect_count >= 1, "manually added rectangles must be preserved");
 
-        let _ = std::fs::remove_file(project_path);
+        let _ = std::fs::remove_dir_all(project_path);
     }
 
     // 6. Central tab order and active tab restoration
