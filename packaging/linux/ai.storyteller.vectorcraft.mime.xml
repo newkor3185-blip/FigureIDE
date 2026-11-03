@@ -9,6 +9,10 @@
     <glob pattern="*.vectorcraft"/>
     <glob pattern="*.drawcraft"/>
   </mime-type>
+  <mime-type type="application/x-figureide">
+    <comment>FigureIDE project</comment>
+    <glob pattern="*.fide"/>
+  </mime-type>
   <mime-type type="application/x-vectorcraft-template">
     <comment>VectorCraft template</comment>
     <sub-class-of type="application/x-vectorcraft"/>
