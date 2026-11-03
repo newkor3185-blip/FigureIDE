@@ -715,10 +715,10 @@ impl Workspace {
             CentralTabId::Script(id) => self.scripts.iter().any(|s| s.id == *id),
             CentralTabId::DataViewer(name) => self.viewer_tabs.iter().any(|v| &v.name == name),
         });
-        if let Some(active_name) = &self.active_viewer_tab {
-            if !self.viewer_tabs.iter().any(|v| &v.name == active_name) {
-                self.active_viewer_tab = None;
-            }
+        if let Some(active_name) = &self.active_viewer_tab
+            && !self.viewer_tabs.iter().any(|v| &v.name == active_name)
+        {
+            self.active_viewer_tab = None;
         }
     }
 
