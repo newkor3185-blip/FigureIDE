@@ -49,21 +49,19 @@ pub(crate) fn build_fide_project(app: &VectorcraftApp) -> Result<FideProject, St
         let mut svg_string = None;
         let mut preview_png = None;
 
-        if let Some(ref st) = active_doc {
-            // Find placed document SVG key from node hierarchy
-            if let Some(node) = st.doc.node(vectorcraft_doc::NodeId(panel.generated_id)) {
-                if let Some(children) = node.children() {
-                    for child in children {
-                        if let vectorcraft_doc::NodeKind::PlacedDocument(ref placed) = child.kind {
-                            if placed.key.starts_with("rvs-svg-") {
-                                if let Some(blob) = st.doc.images.get(&placed.key) {
-                                    svg_string = String::from_utf8(blob.bytes.to_vec()).ok();
-                                    if let Some(ref proxy) = blob.proxy {
-                                        preview_png = Some((**proxy).clone());
-                                    }
-                                }
-                            }
-                        }
+        if let Some(st) = active_doc
+            && let Some(node) = st.doc.node(vectorcraft_doc::NodeId(panel.generated_id))
+            && let Some(children) = node.children()
+        {
+            // Find placed document SVG key from node hierarchy.
+            for child in children {
+                if let vectorcraft_doc::NodeKind::PlacedDocument(ref placed) = child.kind
+                    && placed.key.starts_with("rvs-svg-")
+                    && let Some(blob) = st.doc.images.get(&placed.key)
+                {
+                    svg_string = String::from_utf8(blob.bytes.to_vec()).ok();
+                    if let Some(ref proxy) = blob.proxy {
+                        preview_png = Some((**proxy).clone());
                     }
                 }
             }
@@ -207,9 +205,10 @@ pub(crate) fn apply_fide_project(app: &mut VectorcraftApp, project: FideProject,
     }
     app.scientific.viewer_tabs.clear();
     for tab in &app.scientific.tab_order {
-        if let CentralTabId::DataViewer(name) = tab {
-            if !app.scientific.viewer_tabs.iter().any(|v| &v.name == name) {
-                app.scientific.viewer_tabs.push(super::DataViewerTab {
+        if let CentralTabId::DataViewer(name) = tab
+            && !app.scientific.viewer_tabs.iter().any(|v| &v.name == name)
+        {
+            app.scientific.viewer_tabs.push(super::DataViewerTab {
                     name: name.clone(),
                     page_start: 0,
                     page_size: 50,
@@ -220,17 +219,16 @@ pub(crate) fn apply_fide_project(app: &mut VectorcraftApp, project: FideProject,
                     sort_ascending: true,
                     loading: false,
                 });
-            }
         }
     }
     if let Some(active) = project.layout.active_tab {
         if let Some(name) = active.strip_prefix("viewer:") {
             app.scientific.active_viewer_tab = Some(name.to_string());
-        } else if let Some(id_str) = active.strip_prefix("script:") {
-            if let Ok(id) = id_str.parse::<u64>() {
-                app.scientific.active_script_id = id;
-                app.scientific.active_viewer_tab = None;
-            }
+        } else if let Some(id_str) = active.strip_prefix("script:")
+            && let Ok(id) = id_str.parse::<u64>()
+        {
+            app.scientific.active_script_id = id;
+            app.scientific.active_viewer_tab = None;
         }
     } else if let Some(first) = app.scientific.scripts.first() {
         app.scientific.active_script_id = first.id;
@@ -459,9 +457,10 @@ pub(crate) fn apply_fide_project_folder(app: &mut VectorcraftApp, project: FideP
     }
     app.scientific.viewer_tabs.clear();
     for tab in &app.scientific.tab_order {
-        if let CentralTabId::DataViewer(name) = tab {
-            if !app.scientific.viewer_tabs.iter().any(|v| &v.name == name) {
-                app.scientific.viewer_tabs.push(super::DataViewerTab {
+        if let CentralTabId::DataViewer(name) = tab
+            && !app.scientific.viewer_tabs.iter().any(|v| &v.name == name)
+        {
+            app.scientific.viewer_tabs.push(super::DataViewerTab {
                     name: name.clone(),
                     page_start: 0,
                     page_size: 50,
@@ -472,17 +471,16 @@ pub(crate) fn apply_fide_project_folder(app: &mut VectorcraftApp, project: FideP
                     sort_ascending: true,
                     loading: false,
                 });
-            }
         }
     }
     if let Some(active) = project.metadata.layout.active_tab {
         if let Some(name) = active.strip_prefix("viewer:") {
             app.scientific.active_viewer_tab = Some(name.to_string());
-        } else if let Some(id_str) = active.strip_prefix("script:") {
-            if let Ok(id) = id_str.parse::<u64>() {
-                app.scientific.active_script_id = id;
-                app.scientific.active_viewer_tab = None;
-            }
+        } else if let Some(id_str) = active.strip_prefix("script:")
+            && let Ok(id) = id_str.parse::<u64>()
+        {
+            app.scientific.active_script_id = id;
+            app.scientific.active_viewer_tab = None;
         }
     } else if let Some(first) = app.scientific.scripts.first() {
         app.scientific.active_script_id = first.id;
@@ -774,9 +772,10 @@ pub(crate) fn save_r_workspace_command(app: &mut VectorcraftApp, p: &Value) -> R
     app.scientific.project_rdata_reference = Some(path.clone());
     if let Some(ref proj_path) = app.scientific.project_path {
         let p_json_path = Path::new(proj_path).join("project.json");
-        if p_json_path.exists() {
-            if let Ok(content) = std::fs::read_to_string(&p_json_path) {
-                if let Ok(mut meta) = serde_json::from_str::<ProjectMetadata>(&content) {
+        if p_json_path.exists()
+            && let Ok(content) = std::fs::read_to_string(&p_json_path)
+            && let Ok(mut meta) = serde_json::from_str::<ProjectMetadata>(&content)
+        {
                     let rel_path = if let Ok(rel) = Path::new(&path).strip_prefix(proj_path) {
                         rel.to_string_lossy().replace('\\', "/")
                     } else {
@@ -787,8 +786,6 @@ pub(crate) fn save_r_workspace_command(app: &mut VectorcraftApp, p: &Value) -> R
                     if let Ok(updated_bytes) = serde_json::to_vec_pretty(&meta) {
                         let _ = vectorcraft_format::write_atomic(&p_json_path, &updated_bytes);
                     }
-                }
-            }
         }
     }
     app.status(format!("R workspace saved to {path} ({count} objects, {bytes} bytes)"));
@@ -883,12 +880,12 @@ pub(crate) fn default_project_parent(app: &VectorcraftApp) -> PathBuf {
     {
         return parent.clone();
     }
-    if let Some(ref proj_path) = app.scientific.project_path {
-        if let Some(parent) = Path::new(proj_path).parent() {
-            if parent.exists() && parent.is_dir() {
-                return parent.to_path_buf();
-            }
-        }
+    if let Some(ref proj_path) = app.scientific.project_path
+        && let Some(parent) = Path::new(proj_path).parent()
+        && parent.exists()
+        && parent.is_dir()
+    {
+        return parent.to_path_buf();
     }
     if let Some(ref wd) = app.scientific.working_directory
         && wd.exists()
