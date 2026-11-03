@@ -2890,7 +2890,7 @@ mod tests {
 
         let cached_start = std::time::Instant::now();
         // Simulate cached check
-        if cache.source == large_script && cache.theme_is_dark == true {
+        if cache.source == large_script && cache.theme_is_dark {
             // zero work needed
         }
         let cached_duration = cached_start.elapsed();
