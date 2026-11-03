@@ -759,7 +759,7 @@ fn graph_numeric_edit_waits_for_enter_before_queuing_render() {
     h.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::A);
     input.type_text("1.7");
     h.run_steps(2);
-    assert!(h.state().scientific.graph_pending.get(&key).is_none(), "typing must not render");
+    assert!(h.state().scientific.!graph_pending.contains_key(&key), "typing must not render");
     h.key_press(egui::Key::Enter);
     h.run_steps(2);
     let request = h.state().scientific.graph_pending.get(&key).expect("Enter should queue render");
@@ -848,7 +848,7 @@ fn graph_size_draft_stays_with_ma_panel_while_pca_is_selected() {
     h.run_steps(2);
     let request = h.state().scientific.graph_pending.get(&ma_key).unwrap();
     assert_eq!((request.width_mm, request.height_mm), (120.0, 80.0));
-    assert!(h.state().scientific.graph_pending.get(&(pca.document_uid, pca.panel_id)).is_none());
+    assert!(h.state().scientific.!graph_pending.contains_key(&(pca.document_uid, pca.panel_id)));
 }
 
 #[test]
