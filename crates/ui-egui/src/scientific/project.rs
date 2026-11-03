@@ -199,10 +199,8 @@ pub(crate) fn apply_fide_project(app: &mut VectorcraftApp, project: FideProject,
             .filter_map(|t| {
                 if let Some(id_str) = t.strip_prefix("script:") {
                     id_str.parse::<u64>().ok().map(CentralTabId::Script)
-                } else if let Some(name) = t.strip_prefix("viewer:") {
-                    Some(CentralTabId::DataViewer(name.to_string()))
                 } else {
-                    None
+                    t.strip_prefix("viewer:").map(|name| CentralTabId::DataViewer(name.to_string()))
                 }
             })
             .collect();
@@ -421,7 +419,7 @@ pub(crate) fn apply_fide_project_folder(app: &mut VectorcraftApp, project: FideP
     let ws_ref = project.metadata.workspace_file.or(project.metadata.layout.rdata_reference);
     app.scientific.project_rdata_reference = if let Some(ref rel_or_abs) = ws_ref {
         if let Some(ref fp) = folder_path {
-            let normalized = rel_or_abs.replace('/', std::path::MAIN_SEPARATOR_STR).replace('\\', std::path::MAIN_SEPARATOR_STR);
+            let normalized = rel_or_abs.replace(['/', '\\'], std::path::MAIN_SEPARATOR_STR);
             let p = Path::new(fp).join(normalized);
             if p.exists() { Some(p.to_string_lossy().into_owned()) } else { Some(rel_or_abs.clone()) }
         } else {
@@ -453,10 +451,8 @@ pub(crate) fn apply_fide_project_folder(app: &mut VectorcraftApp, project: FideP
             .filter_map(|t| {
                 if let Some(id_str) = t.strip_prefix("script:") {
                     id_str.parse::<u64>().ok().map(CentralTabId::Script)
-                } else if let Some(name) = t.strip_prefix("viewer:") {
-                    Some(CentralTabId::DataViewer(name.to_string()))
                 } else {
-                    None
+                    t.strip_prefix("viewer:").map(|name| CentralTabId::DataViewer(name.to_string()))
                 }
             })
             .collect();
@@ -561,10 +557,10 @@ pub(crate) fn save_project_to_path(app: &mut VectorcraftApp, path: &str, save_r_
     if folder_path.extension().and_then(|ext| ext.to_str()).map(|ext| ext.eq_ignore_ascii_case("fide")).unwrap_or(false) {
         folder_path.set_extension("");
     }
-    if folder_path.file_name().and_then(|n| n.to_str()) == Some("project.json") {
-        if let Some(parent) = folder_path.parent().map(Path::to_path_buf) {
-            folder_path = parent;
-        }
+    if folder_path.file_name().and_then(|n| n.to_str()) == Some("project.json")
+        && let Some(parent) = folder_path.parent().map(Path::to_path_buf)
+    {
+        folder_path = parent;
     }
     let project_name = folder_path.file_name().and_then(|n| n.to_str()).unwrap_or("FigureIDE_Project");
 
@@ -881,10 +877,11 @@ pub(crate) fn is_project_dirty(app: &VectorcraftApp) -> bool {
 
 /// Resolve a sensible default parent directory for new/saved projects.
 pub(crate) fn default_project_parent(app: &VectorcraftApp) -> PathBuf {
-    if let Some(ref parent) = app.scientific.last_project_parent {
-        if parent.exists() && parent.is_dir() {
-            return parent.clone();
-        }
+    if let Some(ref parent) = app.scientific.last_project_parent
+        && parent.exists()
+        && parent.is_dir()
+    {
+        return parent.clone();
     }
     if let Some(ref proj_path) = app.scientific.project_path {
         if let Some(parent) = Path::new(proj_path).parent() {
@@ -893,10 +890,11 @@ pub(crate) fn default_project_parent(app: &VectorcraftApp) -> PathBuf {
             }
         }
     }
-    if let Some(ref wd) = app.scientific.working_directory {
-        if wd.exists() && wd.is_dir() {
-            return wd.clone();
-        }
+    if let Some(ref wd) = app.scientific.working_directory
+        && wd.exists()
+        && wd.is_dir()
+    {
+        return wd.clone();
     }
     #[cfg(target_os = "windows")]
     {
@@ -1409,10 +1407,12 @@ mod tests {
         let mut app = make_test_app();
         app.run("file.new", json!({"width": "210 mm", "height": "297 mm"})).unwrap();
 
-        let mut style = GraphStyle::default();
-        style.plot_title_pt = Some(22.0);
-        style.axis_x_line_mm = Some(0.8);
-        style.tick_x_visible = Some(false);
+        let style = GraphStyle {
+            plot_title_pt: Some(22.0),
+            axis_x_line_mm: Some(0.8),
+            tick_x_visible: Some(false),
+            ..Default::default()
+        };
 
         app.scientific.linked_panels.push(RLinkedPanel {
             panel_id: 1,
@@ -2046,9 +2046,11 @@ mod tests {
     fn test_preserve_graph_style_overrides_and_dimensions() {
         let mut app = make_test_app();
         app.run("file.new", json!({"width": "210 mm", "height": "297 mm"})).unwrap();
-        let mut style = GraphStyle::default();
-        style.plot_title_pt = Some(22.0);
-        style.axis_x_line_mm = Some(0.8);
+        let style = GraphStyle {
+            plot_title_pt: Some(22.0),
+            axis_x_line_mm: Some(0.8),
+            ..Default::default()
+        };
         add_test_panel_with_style(&mut app, 10, 11, "plot_A", "A", 125.0, 85.0, style, true);
 
         let project = build_fide_project(&app).expect("build");
@@ -2519,13 +2521,14 @@ mod tests {
         ));
 
         // 3 & 4. Add multiple linked plots (PCA, UMAP, Volcano) with Hybrid Linked SVG
-        let mut style_pca = GraphStyle::default();
-        style_pca.plot_title_pt = Some(18.0);
-        style_pca.axis_x_line_mm = Some(0.6);
+        let style_pca = GraphStyle {
+            plot_title_pt: Some(18.0),
+            axis_x_line_mm: Some(0.6),
+            ..Default::default()
+        };
         add_test_panel_with_style(&mut app, 100, 101, "p_pca", "A", 90.0, 70.0, style_pca, true);
 
-        let mut style_umap = GraphStyle::default();
-        style_umap.plot_title_pt = Some(16.0);
+        let style_umap = GraphStyle { plot_title_pt: Some(16.0), ..Default::default() };
         add_test_panel_with_style(&mut app, 200, 201, "p_umap", "B", 100.0, 80.0, style_umap, false);
 
         add_test_panel(&mut app, 300, 301, "p_volcano", "C", 85.0, 65.0);
@@ -2586,7 +2589,7 @@ mod tests {
 
         // Verify native vector annotations preserved
         let doc = fresh_app.session.doc().unwrap();
-        assert!(doc.doc.layers.len() >= 1);
+        assert!(!doc.doc.layers.is_empty());
         let mut node_count = 0;
         doc.doc.walk(|_| node_count += 1);
         assert!(node_count >= 4, "Must retain native vector annotations alongside linked plots");
