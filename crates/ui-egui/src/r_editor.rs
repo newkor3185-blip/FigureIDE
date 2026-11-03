@@ -331,8 +331,8 @@ pub(crate) fn parse_r_named_color(name: &str) -> Option<egui::Color32> {
             && let Ok(n) = num_part.parse::<u32>()
             && n <= 100
         {
-                    let v = (n as f32 * 255.0 / 100.0).round() as u8;
-                    return Some(egui::Color32::from_rgb(v, v, v));
+            let v = (n as f32 * 255.0 / 100.0).round() as u8;
+            return Some(egui::Color32::from_rgb(v, v, v));
         }
     }
 
@@ -438,13 +438,12 @@ pub(crate) fn is_color_argument_context(source: &str, tokens: &[(usize, usize, T
                                 return true;
                             }
                             if (fn_name == "c" || fn_name == "list" || fn_name == "vector") && i >= 2 {
-                                    let (_, _, op_kind) = tokens[i - 2];
-                                    let op_text = source.get(tokens[i - 2].0..tokens[i - 2].1).unwrap_or_default();
-                                    if (op_text == "=" || op_text == "<-" || op_kind == TokenKind::Assignment) && i >= 3 {
-                                            let ident = source.get(tokens[i - 3].0..tokens[i - 3].1).unwrap_or_default();
-                                            if is_color_identifier_name(ident) {
-                                                return true;
-                                            }
+                                let (_, _, op_kind) = tokens[i - 2];
+                                let op_text = source.get(tokens[i - 2].0..tokens[i - 2].1).unwrap_or_default();
+                                if (op_text == "=" || op_text == "<-" || op_kind == TokenKind::Assignment) && i >= 3 {
+                                    let ident = source.get(tokens[i - 3].0..tokens[i - 3].1).unwrap_or_default();
+                                    if is_color_identifier_name(ident) {
+                                        return true;
                                     }
                                 }
                             }
