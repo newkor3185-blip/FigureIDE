@@ -157,20 +157,20 @@ fn show_environment_entries(app: &mut crate::VectorcraftApp, ui: &mut egui::Ui) 
         if panel_action(ui, "Refresh", !app.scientific.running, false).clicked() {
             refresh_environment(&mut app.scientific);
         }
-        if panel_action(ui, "Save R Workspace", !app.scientific.running, false).clicked() {
-            if let Err(err) = app.run("r.workspace.save", serde_json::json!({})) {
-                app.status(format!("Save R Workspace failed: {err}"));
-            }
+        if panel_action(ui, "Save R Workspace", !app.scientific.running, false).clicked()
+            && let Err(err) = app.run("r.workspace.save", serde_json::json!({}))
+        {
+            app.status(format!("Save R Workspace failed: {err}"));
         }
-        if panel_action(ui, "Load R Workspace", !app.scientific.running, false).clicked() {
-            if let Err(err) = app.run("r.workspace.load", serde_json::json!({})) {
-                app.status(format!("Load R Workspace failed: {err}"));
-            }
+        if panel_action(ui, "Load R Workspace", !app.scientific.running, false).clicked()
+            && let Err(err) = app.run("r.workspace.load", serde_json::json!({}))
+        {
+            app.status(format!("Load R Workspace failed: {err}"));
         }
-        if app.scientific.resolve_project_rdata_path().is_some() {
-            if panel_action(ui, "Restore R Workspace", !app.scientific.running, false).clicked() {
-                super::restore_project_rdata_action(app);
-            }
+        if app.scientific.resolve_project_rdata_path().is_some()
+            && panel_action(ui, "Restore R Workspace", !app.scientific.running, false).clicked()
+        {
+            super::restore_project_rdata_action(app);
         }
         if panel_action(ui, "Import RData", !app.scientific.running, false).clicked() {
             crate::picks::button(app, import_rdata_dialog);
