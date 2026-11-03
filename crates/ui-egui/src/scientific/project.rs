@@ -1314,7 +1314,10 @@ mod tests {
     #[test]
     fn test_authoritative_script_snapshot() {
         let mut app = make_test_app();
-        let external_path = std::env::temp_dir().join("test_authoritative_script.R");
+        let temp_dir = std::env::temp_dir().join(format!("test_authoritative_script_{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&temp_dir);
+        std::fs::create_dir_all(&temp_dir).unwrap();
+        let external_path = temp_dir.join("test_authoritative_script.R");
         std::fs::write(&external_path, "external_code <- 100\n").unwrap();
 
         // In app, the user has edited the buffer to something else
@@ -1326,7 +1329,7 @@ mod tests {
             None,
         ));
 
-        let project_path = std::env::temp_dir().join("test_authoritative_script.fide");
+        let project_path = temp_dir.join("project");
         save_project_to_path(&mut app, &project_path.to_string_lossy(), None).expect("save project");
 
         // Verify external file was NOT modified!
@@ -1341,8 +1344,7 @@ mod tests {
         assert_eq!(reopened.scientific.scripts[0].text, "embedded_code <- 200\n");
         assert_eq!(reopened.scientific.scripts[0].path.as_deref(), Some(external_path.to_string_lossy().as_ref()));
 
-        let _ = std::fs::remove_file(external_path);
-        let _ = std::fs::remove_file(project_path);
+        let _ = std::fs::remove_dir_all(temp_dir);
     }
 
     // 3. Hybrid Linked Plot instant preview on reopen: does not trigger R and does not expand to points
