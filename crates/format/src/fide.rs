@@ -647,7 +647,9 @@ pub fn check_destination_conflict(parent: &Path, name: &str) -> DestinationConfl
     if target.join("project.json").exists() {
         return DestinationConflict::ExistingFigureIDEProject(target);
     }
-    if target.is_dir() && let Ok(mut entries) = std::fs::read_dir(&target) {
+    if target.is_dir()
+        && let Ok(mut entries) = std::fs::read_dir(&target)
+    {
         if entries.next().is_some() {
             return DestinationConflict::DirectoryNotEmpty(target);
         }
@@ -897,7 +899,9 @@ pub fn load_project_folder(folder_path: &Path) -> Result<FideProjectFolder, Fide
         }
     }
 
-    if figures.is_empty() && let Some(ref af) = metadata.active_figure {
+    if figures.is_empty()
+        && let Some(ref af) = metadata.active_figure
+    {
         let fig_path = base_dir.join(af);
         if fig_path.exists() {
             let doc = load_fide_figure(&fig_path).map_err(|e| FideError::CorruptFigure(af.clone(), e.to_string()))?;
@@ -908,7 +912,9 @@ pub fn load_project_folder(folder_path: &Path) -> Result<FideProjectFolder, Fide
     // Load assets
     let mut assets = BTreeMap::new();
     let assets_dir = base_dir.join("assets");
-    if assets_dir.is_dir() && let Ok(entries) = std::fs::read_dir(assets_dir) {
+    if assets_dir.is_dir()
+        && let Ok(entries) = std::fs::read_dir(assets_dir)
+    {
         for entry in entries.flatten() {
             if entry.path().is_file()
                 && let Some(file_name) = entry.file_name().to_str()
