@@ -209,16 +209,16 @@ pub(crate) fn apply_fide_project(app: &mut VectorcraftApp, project: FideProject,
             && !app.scientific.viewer_tabs.iter().any(|v| &v.name == name)
         {
             app.scientific.viewer_tabs.push(super::DataViewerTab {
-                    name: name.clone(),
-                    page_start: 0,
-                    page_size: 50,
-                    page: None,
-                    error: None,
-                    filter: String::new(),
-                    sort_column: None,
-                    sort_ascending: true,
-                    loading: false,
-                });
+                name: name.clone(),
+                page_start: 0,
+                page_size: 50,
+                page: None,
+                error: None,
+                filter: String::new(),
+                sort_column: None,
+                sort_ascending: true,
+                loading: false,
+            });
         }
     }
     if let Some(active) = project.layout.active_tab {
@@ -461,16 +461,16 @@ pub(crate) fn apply_fide_project_folder(app: &mut VectorcraftApp, project: FideP
             && !app.scientific.viewer_tabs.iter().any(|v| &v.name == name)
         {
             app.scientific.viewer_tabs.push(super::DataViewerTab {
-                    name: name.clone(),
-                    page_start: 0,
-                    page_size: 50,
-                    page: None,
-                    error: None,
-                    filter: String::new(),
-                    sort_column: None,
-                    sort_ascending: true,
-                    loading: false,
-                });
+                name: name.clone(),
+                page_start: 0,
+                page_size: 50,
+                page: None,
+                error: None,
+                filter: String::new(),
+                sort_column: None,
+                sort_ascending: true,
+                loading: false,
+            });
         }
     }
     if let Some(active) = project.metadata.layout.active_tab {
@@ -776,16 +776,16 @@ pub(crate) fn save_r_workspace_command(app: &mut VectorcraftApp, p: &Value) -> R
             && let Ok(content) = std::fs::read_to_string(&p_json_path)
             && let Ok(mut meta) = serde_json::from_str::<ProjectMetadata>(&content)
         {
-                    let rel_path = if let Ok(rel) = Path::new(&path).strip_prefix(proj_path) {
-                        rel.to_string_lossy().replace('\\', "/")
-                    } else {
-                        "workspace/workspace.RData".into()
-                    };
-                    meta.workspace_file = Some(rel_path);
-                    meta.updated_at = current_iso_time();
-                    if let Ok(updated_bytes) = serde_json::to_vec_pretty(&meta) {
-                        let _ = vectorcraft_format::write_atomic(&p_json_path, &updated_bytes);
-                    }
+            let rel_path = if let Ok(rel) = Path::new(&path).strip_prefix(proj_path) {
+                rel.to_string_lossy().replace('\\', "/")
+            } else {
+                "workspace/workspace.RData".into()
+            };
+            meta.workspace_file = Some(rel_path);
+            meta.updated_at = current_iso_time();
+            if let Ok(updated_bytes) = serde_json::to_vec_pretty(&meta) {
+                let _ = vectorcraft_format::write_atomic(&p_json_path, &updated_bytes);
+            }
         }
     }
     app.status(format!("R workspace saved to {path} ({count} objects, {bytes} bytes)"));
@@ -1404,12 +1404,7 @@ mod tests {
         let mut app = make_test_app();
         app.run("file.new", json!({"width": "210 mm", "height": "297 mm"})).unwrap();
 
-        let style = GraphStyle {
-            plot_title_pt: Some(22.0),
-            axis_x_line_mm: Some(0.8),
-            tick_x_visible: Some(false),
-            ..Default::default()
-        };
+        let style = GraphStyle { plot_title_pt: Some(22.0), axis_x_line_mm: Some(0.8), tick_x_visible: Some(false), ..Default::default() };
 
         app.scientific.linked_panels.push(RLinkedPanel {
             panel_id: 1,
@@ -2029,10 +2024,10 @@ mod tests {
                 Box::new((
                     super::super::PanelAction::Refresh { panel_id: 1, generated_id: 2, width_mm: 100.0, height_mm: 75.0 },
                     Ok(super::super::RenderedPlot {
-                    variable: "plot_A".into(),
-                    svg: "<svg></svg>".into(),
-                    plots: vec![],
-                    action: super::super::PanelAction::Refresh { panel_id: 1, generated_id: 2, width_mm: 100.0, height_mm: 75.0 },
+                        variable: "plot_A".into(),
+                        svg: "<svg></svg>".into(),
+                        plots: vec![],
+                        action: super::super::PanelAction::Refresh { panel_id: 1, generated_id: 2, width_mm: 100.0, height_mm: 75.0 },
                     }),
                 )),
             ))
@@ -2047,11 +2042,7 @@ mod tests {
     fn test_preserve_graph_style_overrides_and_dimensions() {
         let mut app = make_test_app();
         app.run("file.new", json!({"width": "210 mm", "height": "297 mm"})).unwrap();
-        let style = GraphStyle {
-            plot_title_pt: Some(22.0),
-            axis_x_line_mm: Some(0.8),
-            ..Default::default()
-        };
+        let style = GraphStyle { plot_title_pt: Some(22.0), axis_x_line_mm: Some(0.8), ..Default::default() };
         add_test_panel_with_style(&mut app, 10, 11, "plot_A", "A", (125.0, 85.0), (style, true));
 
         let project = build_fide_project(&app).expect("build");
@@ -2522,11 +2513,7 @@ mod tests {
         ));
 
         // 3 & 4. Add multiple linked plots (PCA, UMAP, Volcano) with Hybrid Linked SVG
-        let style_pca = GraphStyle {
-            plot_title_pt: Some(18.0),
-            axis_x_line_mm: Some(0.6),
-            ..Default::default()
-        };
+        let style_pca = GraphStyle { plot_title_pt: Some(18.0), axis_x_line_mm: Some(0.6), ..Default::default() };
         add_test_panel_with_style(&mut app, 100, 101, "p_pca", "A", (90.0, 70.0), (style_pca, true));
 
         let style_umap = GraphStyle { plot_title_pt: Some(16.0), ..Default::default() };
