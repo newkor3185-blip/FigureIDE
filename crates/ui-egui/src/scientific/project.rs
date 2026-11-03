@@ -1606,11 +1606,11 @@ mod tests {
         assert!(is_project_dirty(&app));
 
         // Save project -> clean
-        let project_path = std::env::temp_dir().join("test_dirty_clean.fide");
+        let project_path = std::env::temp_dir().join(format!("test_dirty_clean_{}", std::process::id()));
         save_project_to_path(&mut app, &project_path.to_string_lossy(), None).unwrap();
         assert!(!is_project_dirty(&app));
 
-        let _ = std::fs::remove_file(project_path);
+        let _ = std::fs::remove_dir_all(project_path);
     }
 
     // 14. Ctrl+S saves project in FigureIDE mode
@@ -1618,7 +1618,7 @@ mod tests {
     fn test_ctrl_s_project_save() {
         let mut app = make_test_app();
         app.run("file.new", json!({"width": "210 mm", "height": "297 mm"})).unwrap();
-        let project_path = std::env::temp_dir().join("test_ctrl_s.fide");
+        let project_path = std::env::temp_dir().join(format!("test_ctrl_s_{}", std::process::id()));
         app.scientific.project_path = Some(project_path.to_string_lossy().into_owned());
 
         // Make dirty
@@ -1631,8 +1631,9 @@ mod tests {
         // Project should be clean and saved on disk
         assert!(!is_project_dirty(&app));
         assert!(project_path.exists());
+        assert!(project_path.join("project.json").exists());
 
-        let _ = std::fs::remove_file(project_path);
+        let _ = std::fs::remove_dir_all(project_path);
     }
 
     fn sample_r_object(variable: &str, plot_kind: &str) -> crate::r_session::RObject {
