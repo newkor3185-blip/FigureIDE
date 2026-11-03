@@ -910,11 +910,12 @@ pub(crate) fn default_project_parent(app: &VectorcraftApp) -> PathBuf {
     #[cfg(not(target_os = "windows"))]
     {
         if let Some(home) = std::env::var_os("HOME") {
-            let docs = PathBuf::from(home).join("Documents");
+            let home = PathBuf::from(home);
+            let docs = home.join("Documents");
             if docs.exists() && docs.is_dir() {
                 return docs;
             }
-            return PathBuf::from(home);
+            return home;
         }
     }
     std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."))
