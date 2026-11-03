@@ -10,7 +10,7 @@ use crate::VectorcraftApp;
 
 pub const REQUIRED_RENDERING_PACKAGES: &[&str] = &["svglite", "ggplot2", "systemfonts"];
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub struct REnvironmentDiagnostics {
     pub r_available: bool,
     pub rscript_path: Option<String>,
@@ -21,22 +21,6 @@ pub struct REnvironmentDiagnostics {
     pub missing_packages: Vec<String>,
     pub install_instructions: Option<String>,
     pub summary: String,
-}
-
-impl Default for REnvironmentDiagnostics {
-    fn default() -> Self {
-        Self {
-            r_available: false,
-            rscript_path: None,
-            r_version: None,
-            r_home: None,
-            lib_paths: Vec::new(),
-            packages: HashMap::new(),
-            missing_packages: Vec::new(),
-            install_instructions: None,
-            summary: String::new(),
-        }
-    }
 }
 
 /// Diagnoses the active or installed R environment and package availability.
