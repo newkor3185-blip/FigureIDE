@@ -167,8 +167,7 @@ fn show_environment_entries(app: &mut crate::VectorcraftApp, ui: &mut egui::Ui) 
         {
             app.status(format!("Load R Workspace failed: {err}"));
         }
-        if app.scientific.resolve_project_rdata_path().is_some()
-            && panel_action(ui, "Restore R Workspace", !app.scientific.running, false).clicked()
+        if app.scientific.resolve_project_rdata_path().is_some() && panel_action(ui, "Restore R Workspace", !app.scientific.running, false).clicked()
         {
             super::restore_project_rdata_action(app);
         }
