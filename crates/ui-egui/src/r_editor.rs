@@ -2878,13 +2878,7 @@ mod tests {
         assert_eq!(color_spans.len(), 400); // 200 lines * 2 colors each = 400
 
         // Test caching: identical source must be instant
-        let cache = HighlightCache {
-            source: large_script.clone(),
-            token_spans: spans,
-            color_spans,
-            theme_is_dark: true,
-            ..Default::default()
-        };
+        let cache = HighlightCache { source: large_script.clone(), token_spans: spans, color_spans, theme_is_dark: true, ..Default::default() };
 
         let cached_start = std::time::Instant::now();
         // Simulate cached check
