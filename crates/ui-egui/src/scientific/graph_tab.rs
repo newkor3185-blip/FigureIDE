@@ -106,10 +106,9 @@ fn text_section(
     size: &mut Option<f64>,
     visible: &mut Option<bool>,
     details: &mut TextDetails,
-    suggested: f64,
-    tick: bool,
-    title: bool,
+    options: (f64, bool, bool),
 ) -> bool {
+    let (suggested, tick, title) = options;
     let mut committed = false;
     egui::CollapsingHeader::new(label).id_salt(("graph-text", label)).default_open(false).show(ui, |ui| {
         committed |= typography_row(ui, label, size, visible, suggested);
@@ -231,63 +230,18 @@ fn show_selected_graph_settings(app: &mut crate::VectorcraftApp, ui: &mut egui::
         });
         egui::CollapsingHeader::new("Typography").default_open(true).show(ui, |ui| {
             committed |=
-                text_section(ui, "Plot title", &mut draft.plot_title_pt, &mut draft.plot_title_visible, &mut draft.title_details, 12.0, false, true);
-            committed |= text_section(
-                ui,
-                "Plot subtitle",
-                &mut draft.subtitle_pt,
-                &mut draft.subtitle_visible,
-                &mut draft.subtitle_details,
-                10.0,
-                false,
-                false,
-            );
+                text_section(ui, "Plot title", &mut draft.plot_title_pt, &mut draft.plot_title_visible, &mut draft.title_details, (12.0, false, true));
+            committed |= text_section(ui, "Plot subtitle", &mut draft.subtitle_pt, &mut draft.subtitle_visible, &mut draft.subtitle_details, (10.0, false, false));
             committed |=
-                text_section(ui, "Plot caption", &mut draft.caption_pt, &mut draft.caption_visible, &mut draft.caption_details, 8.0, false, false);
-            committed |= text_section(
-                ui,
-                "X-axis title",
-                &mut draft.axis_title_x_pt,
-                &mut draft.axis_title_x_visible,
-                &mut draft.axis_title_x_details,
-                10.0,
-                false,
-                false,
-            );
-            committed |= text_section(
-                ui,
-                "Y-axis title",
-                &mut draft.axis_title_y_pt,
-                &mut draft.axis_title_y_visible,
-                &mut draft.axis_title_y_details,
-                10.0,
-                false,
-                false,
-            );
+                text_section(ui, "Plot caption", &mut draft.caption_pt, &mut draft.caption_visible, &mut draft.caption_details, (8.0, false, false));
+            committed |= text_section(ui, "X-axis title", &mut draft.axis_title_x_pt, &mut draft.axis_title_x_visible, &mut draft.axis_title_x_details, (10.0, false, false));
+            committed |= text_section(ui, "Y-axis title", &mut draft.axis_title_y_pt, &mut draft.axis_title_y_visible, &mut draft.axis_title_y_details, (10.0, false, false));
             committed |=
-                text_section(ui, "X-axis tick labels", &mut draft.tick_x_pt, &mut draft.tick_x_visible, &mut draft.tick_x_details, 8.0, true, false);
+                text_section(ui, "X-axis tick labels", &mut draft.tick_x_pt, &mut draft.tick_x_visible, &mut draft.tick_x_details, (8.0, true, false));
             committed |=
-                text_section(ui, "Y-axis tick labels", &mut draft.tick_y_pt, &mut draft.tick_y_visible, &mut draft.tick_y_details, 8.0, true, false);
-            committed |= text_section(
-                ui,
-                "Legend title",
-                &mut draft.legend_title_pt,
-                &mut draft.legend_title_visible,
-                &mut draft.legend_title_details,
-                10.0,
-                false,
-                false,
-            );
-            committed |= text_section(
-                ui,
-                "Legend text",
-                &mut draft.legend_text_pt,
-                &mut draft.legend_text_visible,
-                &mut draft.legend_text_details,
-                8.0,
-                false,
-                false,
-            );
+                text_section(ui, "Y-axis tick labels", &mut draft.tick_y_pt, &mut draft.tick_y_visible, &mut draft.tick_y_details, (8.0, true, false));
+            committed |= text_section(ui, "Legend title", &mut draft.legend_title_pt, &mut draft.legend_title_visible, &mut draft.legend_title_details, (10.0, false, false));
+            committed |= text_section(ui, "Legend text", &mut draft.legend_text_pt, &mut draft.legend_text_visible, &mut draft.legend_text_details, (8.0, false, false));
             let before = draft.plot_title_position;
             ui.horizontal(|ui| {
                 ui.label("Title position");
@@ -363,16 +317,7 @@ fn show_selected_graph_settings(app: &mut crate::VectorcraftApp, ui: &mut egui::
         });
         egui::CollapsingHeader::new("Margins and Facets").default_open(false).show(ui, |ui| {
             committed |= margins_row(ui, "Plot margins", &mut draft.plot_margin_mm);
-            committed |= text_section(
-                ui,
-                "Facet strip text",
-                &mut draft.strip_text_pt,
-                &mut draft.strip_text_visible,
-                &mut draft.strip_text_details,
-                9.0,
-                false,
-                false,
-            );
+            committed |= text_section(ui, "Facet strip text", &mut draft.strip_text_pt, &mut draft.strip_text_visible, &mut draft.strip_text_details, (9.0, false, false));
             committed |= string_row(ui, "Facet strip fill", &mut draft.strip_background, "#eeeeee");
             committed |= number_row(ui, "Panel spacing", &mut draft.panel_spacing_mm, 2.0, " mm", 0.0..=100.0);
         });
