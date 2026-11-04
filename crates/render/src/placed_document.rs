@@ -190,8 +190,7 @@ fn make(r: &mut Renderer, object: &PlacedDocument, blob: &ImageBlob, step: f64) 
             fonts.load_system_fonts();
             Arc::new(fonts)
         });
-        let mut options = resvg::usvg::Options::default();
-        options.fontdb = FONTS.clone();
+        let options = resvg::usvg::Options { fontdb: FONTS.clone(), ..Default::default() };
         if let Ok(tree) = resvg::usvg::Tree::from_data(&blob.bytes, &options)
             && let Some(mut preview) = resvg::tiny_skia::Pixmap::new(u32::from(w), u32::from(h))
         {

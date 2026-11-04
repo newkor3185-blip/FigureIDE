@@ -326,13 +326,13 @@ pub(crate) fn parse_r_named_color(name: &str) -> Option<egui::Color32> {
     // gray0 .. gray100 or grey0 .. grey100
     if lower.starts_with("gray") || lower.starts_with("grey") {
         let num_part = &lower[4..];
-        if !num_part.is_empty() && num_part.chars().all(|c| c.is_ascii_digit()) {
-            if let Ok(n) = num_part.parse::<u32>() {
-                if n <= 100 {
-                    let v = (n as f32 * 255.0 / 100.0).round() as u8;
-                    return Some(egui::Color32::from_rgb(v, v, v));
-                }
-            }
+        if !num_part.is_empty()
+            && num_part.chars().all(|c| c.is_ascii_digit())
+            && let Ok(n) = num_part.parse::<u32>()
+            && n <= 100
+        {
+            let v = (n as f32 * 255.0 / 100.0).round() as u8;
+            return Some(egui::Color32::from_rgb(v, v, v));
         }
     }
 
@@ -437,17 +437,13 @@ pub(crate) fn is_color_argument_context(source: &str, tokens: &[(usize, usize, T
                             if is_color_function_name(&fn_name) {
                                 return true;
                             }
-                            if fn_name == "c" || fn_name == "list" || fn_name == "vector" {
-                                if i >= 2 {
-                                    let (_, _, op_kind) = tokens[i - 2];
-                                    let op_text = source.get(tokens[i - 2].0..tokens[i - 2].1).unwrap_or_default();
-                                    if op_text == "=" || op_text == "<-" || op_kind == TokenKind::Assignment {
-                                        if i >= 3 {
-                                            let ident = source.get(tokens[i - 3].0..tokens[i - 3].1).unwrap_or_default();
-                                            if is_color_identifier_name(ident) {
-                                                return true;
-                                            }
-                                        }
+                            if (fn_name == "c" || fn_name == "list" || fn_name == "vector") && i >= 2 {
+                                let (_, _, op_kind) = tokens[i - 2];
+                                let op_text = source.get(tokens[i - 2].0..tokens[i - 2].1).unwrap_or_default();
+                                if (op_text == "=" || op_text == "<-" || op_kind == TokenKind::Assignment) && i >= 3 {
+                                    let ident = source.get(tokens[i - 3].0..tokens[i - 3].1).unwrap_or_default();
+                                    if is_color_identifier_name(ident) {
+                                        return true;
                                     }
                                 }
                             }
@@ -649,11 +645,11 @@ fn operator(c: &[(usize, char)], start: usize) -> Option<(usize, TokenKind)> {
     }
     if c.get(start).is_some_and(|(_, x)| *x == '%') {
         let max_search = (start + 32).min(c.len());
-        for k in start + 1..max_search {
-            if c[k].1 == '%' {
-                return Some((k - start + 1, TokenKind::Operator));
+        for (offset, &(_, ch)) in c[start + 1..max_search].iter().enumerate() {
+            if ch == '%' {
+                return Some((offset + 2, TokenKind::Operator));
             }
-            if c[k].1 == '\n' || c[k].1.is_whitespace() {
+            if ch == '\n' || ch.is_whitespace() {
                 break;
             }
         }
@@ -840,7 +836,7 @@ pub(crate) fn completion_context_at(source: &str, cursor_char: usize) -> Option<
                 let content_start_byte = at.saturating_add(quote_char.len_utf8());
                 if cursor_byte >= content_start_byte {
                     let raw_string = source.get(content_start_byte..cursor_byte).unwrap_or_default();
-                    let last_slash_offset = raw_string.rfind(|c| c == '/' || c == '\\').map(|i| i + 1).unwrap_or(0);
+                    let last_slash_offset = raw_string.rfind(['/', '\\']).map(|i| i + 1).unwrap_or(0);
                     let filter_prefix = raw_string[last_slash_offset..].to_owned();
                     let segment_start_byte = content_start_byte + last_slash_offset;
                     let replace_start_char = source.get(..segment_start_byte).map_or(0, |s| s.chars().count());
@@ -2882,15 +2878,11 @@ mod tests {
         assert_eq!(color_spans.len(), 400); // 200 lines * 2 colors each = 400
 
         // Test caching: identical source must be instant
-        let mut cache = HighlightCache::default();
-        cache.source = large_script.clone();
-        cache.token_spans = spans;
-        cache.color_spans = color_spans;
-        cache.theme_is_dark = true;
+        let cache = HighlightCache { source: large_script.clone(), token_spans: spans, color_spans, theme_is_dark: true, ..Default::default() };
 
         let cached_start = std::time::Instant::now();
         // Simulate cached check
-        if cache.source == large_script && cache.theme_is_dark == true {
+        if cache.source == large_script && cache.theme_is_dark {
             // zero work needed
         }
         let cached_duration = cached_start.elapsed();

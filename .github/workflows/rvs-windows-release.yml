@@ -99,99 +99,99 @@ jobs:
           $buildDate = (Get-Date).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ")
 
           @"
-==================================================
-FigureIDE (Windows Portable x64)
-==================================================
-
-Version: $ver
-Commit:  $commitSha
-Built:   $buildDate
-
-Portable Usage:
----------------
-1. Extract this archive to any folder of your choice.
-2. Run FigureIDE.exe directly.
-   - No administrator privileges or system installer required.
-   - Runs independently without modifying system registry.
-
-Folder-Based FigureIDE Projects:
---------------------------------
-FigureIDE uses folder-based projects containing:
-  <ProjectName>/
-  ├── project.json            # Project manifest and tab/view configuration
-  ├── scripts/                # Authoritative editable R scripts (*.R)
-  ├── workspace/              # R workspace snapshot (workspace.RData)
-  ├── figures/                # Individual figure documents (*.fide)
-  └── assets/                 # Embedded or referenced assets
-
-Opening Projects & Documents:
------------------------------
-- Open Project Folder:
-    Drag and drop a project folder onto FigureIDE.exe, or run:
-      FigureIDE.exe "C:\Path\To\ProjectFolder"
-    Or select File ▸ Open Project in the application.
-- Open Standalone Figure (.fide):
-    Drag and drop a .fide figure document onto FigureIDE.exe, or run:
-      FigureIDE.exe "C:\Path\To\Figure.fide"
-- Offline Art Viewing:
-    Saved figures and Hybrid Linked Plots display instantly with full fidelity
-    even on systems without R installed.
-
-Explicit Save / Load R Workspace:
----------------------------------
-- FigureIDE separates document vector editing from R memory persistence.
-- To save your active R session workspace (.GlobalEnv):
-    Click 'Save R Workspace' in the Environment panel or File ▸ Save R Workspace.
-    Saved to workspace/workspace.RData atomically.
-- To restore your R session:
-    Click 'Load R Workspace' in the Environment panel or File ▸ Load R Workspace.
-    Includes collision detection and safe reconnection.
-
-R Requirements & Diagnostics:
------------------------------
-To run analysis scripts or re-render linked figures:
-1. Install R (>= 4.0 recommended) from https://cloud.r-project.org
-2. Install rendering dependencies:
-     install.packages(c("svglite", "ggplot2"), repos = "https://cloud.r-project.org")
-3. Use the Environment panel or Packages tab to inspect installed packages.
-
-Optional .fide File Association:
---------------------------------
-This is a portable ZIP distribution. It does not touch your Windows registry
-unless you choose to run the optional association helper:
-- register-fide-association.cmd: Associates .fide figure files with this executable.
-- unregister-fide-association.cmd: Removes the .fide association.
-
-Issues & Releases:
-------------------
-GitHub Releases: https://github.com/newkor3185-blip/R_vector_studio/releases
-GitHub Issues:   https://github.com/newkor3185-blip/R_vector_studio/issues
-"@ | Set-Content "$inner/README.txt" -Encoding UTF8
-
-          @"
-commit=$commitSha
-version=$ver
-build_date=$buildDate
-target=x86_64-pc-windows-msvc
-"@ | Set-Content "$inner/BUILD_INFO.txt" -Encoding UTF8
+          ==================================================
+          FigureIDE (Windows Portable x64)
+          ==================================================
+          
+          Version: $ver
+          Commit:  $commitSha
+          Built:   $buildDate
+          
+          Portable Usage:
+          ---------------
+          1. Extract this archive to any folder of your choice.
+          2. Run FigureIDE.exe directly.
+             - No administrator privileges or system installer required.
+             - Runs independently without modifying system registry.
+          
+          Folder-Based FigureIDE Projects:
+          --------------------------------
+          FigureIDE uses folder-based projects containing:
+            <ProjectName>/
+            ├── project.json            # Project manifest and tab/view configuration
+            ├── scripts/                # Authoritative editable R scripts (*.R)
+            ├── workspace/              # R workspace snapshot (workspace.RData)
+            ├── figures/                # Individual figure documents (*.fide)
+            └── assets/                 # Embedded or referenced assets
+          
+          Opening Projects & Documents:
+          -----------------------------
+          - Open Project Folder:
+              Drag and drop a project folder onto FigureIDE.exe, or run:
+                FigureIDE.exe "C:\Path\To\ProjectFolder"
+              Or select File ▸ Open Project in the application.
+          - Open Standalone Figure (.fide):
+              Drag and drop a .fide figure document onto FigureIDE.exe, or run:
+                FigureIDE.exe "C:\Path\To\Figure.fide"
+          - Offline Art Viewing:
+              Saved figures and Hybrid Linked Plots display instantly with full fidelity
+              even on systems without R installed.
+          
+          Explicit Save / Load R Workspace:
+          ---------------------------------
+          - FigureIDE separates document vector editing from R memory persistence.
+          - To save your active R session workspace (.GlobalEnv):
+              Click 'Save R Workspace' in the Environment panel or File ▸ Save R Workspace.
+              Saved to workspace/workspace.RData atomically.
+          - To restore your R session:
+              Click 'Load R Workspace' in the Environment panel or File ▸ Load R Workspace.
+              Includes collision detection and safe reconnection.
+          
+          R Requirements & Diagnostics:
+          -----------------------------
+          To run analysis scripts or re-render linked figures:
+          1. Install R (>= 4.0 recommended) from https://cloud.r-project.org
+          2. Install rendering dependencies:
+               install.packages(c("svglite", "ggplot2"), repos = "https://cloud.r-project.org")
+          3. Use the Environment panel or Packages tab to inspect installed packages.
+          
+          Optional .fide File Association:
+          --------------------------------
+          This is a portable ZIP distribution. It does not touch your Windows registry
+          unless you choose to run the optional association helper:
+          - register-fide-association.cmd: Associates .fide figure files with this executable.
+          - unregister-fide-association.cmd: Removes the .fide association.
+          
+          Issues & Releases:
+          ------------------
+          GitHub Releases: https://github.com/newkor3185-blip/R_vector_studio/releases
+          GitHub Issues:   https://github.com/newkor3185-blip/R_vector_studio/issues
+          "@ | Set-Content "$inner/README.txt" -Encoding UTF8
 
           @"
-@echo off
-REM Register .fide file association with this portable FigureIDE executable
-assoc .fide=FigureIDE.Figure
-ftype FigureIDE.Figure="%~dp0FigureIDE.exe" "%%1"
-echo .fide figure file association registered to %~dp0FigureIDE.exe
-pause
-"@ | Set-Content "$inner/register-fide-association.cmd" -Encoding ASCII
+          commit=$commitSha
+          version=$ver
+          build_date=$buildDate
+          target=x86_64-pc-windows-msvc
+          "@ | Set-Content "$inner/BUILD_INFO.txt" -Encoding UTF8
 
           @"
-@echo off
-REM Remove .fide file association
-assoc .fide=
-ftype FigureIDE.Figure=
-echo .fide figure file association removed.
-pause
-"@ | Set-Content "$inner/unregister-fide-association.cmd" -Encoding ASCII
+          @echo off
+          REM Register .fide file association with this portable FigureIDE executable
+          assoc .fide=FigureIDE.Figure
+          ftype FigureIDE.Figure="%~dp0FigureIDE.exe" "%%1"
+          echo .fide figure file association registered to %~dp0FigureIDE.exe
+          pause
+          "@ | Set-Content "$inner/register-fide-association.cmd" -Encoding ASCII
+
+          @"
+          @echo off
+          REM Remove .fide file association
+          assoc .fide=
+          ftype FigureIDE.Figure=
+          echo .fide figure file association removed.
+          pause
+          "@ | Set-Content "$inner/unregister-fide-association.cmd" -Encoding ASCII
 
           Compress-Archive -Path "$folder/*" -DestinationPath "$folder.zip" -Force
 

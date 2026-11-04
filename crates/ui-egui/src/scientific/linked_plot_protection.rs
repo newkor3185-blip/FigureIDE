@@ -286,7 +286,7 @@ pub(crate) fn intercept_command(app: &mut VectorcraftApp, id: &str, params: &Val
     if app.scientific.pending_unlink_edit.is_some() || app.scientific.captured_rotation.is_some() {
         return Some(Err("Resolve the pending linked-plot edit first".into()));
     }
-    let Some(state) = app.session.active() else { return None };
+    let state = app.session.active()?;
     let ids = command_ids(app, id, params);
     app.scientific.pending_unlink_edit = Some(PendingUnlinkEdit {
         document_uid: state.uid,
@@ -414,7 +414,7 @@ pub(crate) fn intercept_pointer(app: &mut VectorcraftApp, event: &PointerEvent, 
         panel_ids,
         events: vec![*event],
         view,
-        tool_id: tool.into(),
+        tool_id: tool,
         confirm_on_click: hit_panel.is_some(),
     });
     true

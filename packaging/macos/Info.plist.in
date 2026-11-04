@@ -89,6 +89,12 @@
       <key>LSHandlerRank</key><string>Owner</string>
     </dict>
     <dict>
+      <key>CFBundleTypeName</key><string>FigureIDE Project</string>
+      <key>CFBundleTypeExtensions</key><array><string>fide</string></array>
+      <key>CFBundleTypeRole</key><string>Editor</string>
+      <key>LSHandlerRank</key><string>Alternate</string>
+    </dict>
+    <dict>
       <key>CFBundleTypeName</key><string>VectorCraft Template</string>
       <key>CFBundleTypeExtensions</key><array><string>vctemplate</string></array>
       <key>CFBundleTypeRole</key><string>Editor</string>

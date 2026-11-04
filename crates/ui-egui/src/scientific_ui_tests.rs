@@ -306,7 +306,8 @@ fn r_workspace_linked_panel_actions_keep_drafts_and_artwork() {
     harness.state_mut().scientific.linked_panels.truncate(1);
     harness.run_steps(2);
     let panel_id = harness.state().scientific.linked_panels[0].panel_id;
-    assert!(!harness.get_by_label("Update").accesskit_node().is_disabled());
+    let original_variable = harness.state().scientific.linked_panels[0].r_variable.clone();
+    assert!(harness.get_by_label("Update").accesskit_node().is_disabled());
     assert!(harness.query_by_role(Role::ComboBox).is_none(), "relink details stay compact until requested");
     harness.get_by_label("Relink").click();
     harness.run_steps(2);
@@ -317,16 +318,13 @@ fn r_workspace_linked_panel_actions_keep_drafts_and_artwork() {
     let other = harness.state().scientific.plots[1].variable.clone();
     harness.get_by_label(&other).click();
     harness.run_steps(4);
+    assert_eq!(harness.state().scientific.panel_relink_open, Some(panel_id), "relink form stays open after selecting another variable");
     assert_eq!(harness.state().scientific.panel_relink_drafts.get(&panel_id), Some(&other), "selection survives later frames");
-    harness.get_by_label("Relink to selected variable").click();
+    harness.get_by_label("Confirm Relink").click();
     harness.run_steps(3);
-    assert_eq!(harness.state().scientific.linked_panels[0].r_variable, other);
+    assert_eq!(harness.state().scientific.linked_panels[0].r_variable, original_variable, "the link changes after the asynchronous R render returns");
+    assert_eq!(harness.state().scientific.panel_states.get(&panel_id), Some(&super::LinkedPanelState::Updating));
     assert!(harness.state().scientific.panel_relink_open.is_none());
-    harness.get_by_label("Unlink").click();
-    harness.run_steps(2);
-    harness.get_by_label("Unlink & Edit").click();
-    harness.run_steps(2);
-    assert!(harness.state().scientific.linked_panels.is_empty());
     assert!(harness.state().session.doc().unwrap().doc.node(vectorcraft_doc::NodeId(panel_id)).is_some());
 
     let mut delete = self::harness(BottomTab::LinkedPanels, 320.0, 1.0, 5, false);
@@ -547,7 +545,10 @@ fn r_workspace_stage3_menus_busy_state_and_tools() {
     assert!(h.get_by_label_contains("Stop R").accesskit_node().is_disabled());
     h.state_mut().scientific.running = true;
     h.run_steps(2);
-    assert!(h.get_by_label_contains("Run Selection or Expression").accesskit_node().is_disabled());
+    assert!(
+        !h.get_by_label_contains("Run Selection or Expression").accesskit_node().is_disabled(),
+        "R selections can queue while an execution is running"
+    );
     assert!(h.get_by_label_contains("Source Active Script").accesskit_node().is_disabled());
     assert!(h.get_by_label_contains("Update All Panels").accesskit_node().is_disabled());
     assert!(h.get_by_label_contains("Restart R").accesskit_node().is_disabled());
@@ -759,7 +760,7 @@ fn graph_numeric_edit_waits_for_enter_before_queuing_render() {
     h.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::A);
     input.type_text("1.7");
     h.run_steps(2);
-    assert!(h.state().scientific.graph_pending.get(&key).is_none(), "typing must not render");
+    assert!(!h.state().scientific.graph_pending.contains_key(&key), "typing must not render");
     h.key_press(egui::Key::Enter);
     h.run_steps(2);
     let request = h.state().scientific.graph_pending.get(&key).expect("Enter should queue render");
@@ -848,7 +849,7 @@ fn graph_size_draft_stays_with_ma_panel_while_pca_is_selected() {
     h.run_steps(2);
     let request = h.state().scientific.graph_pending.get(&ma_key).unwrap();
     assert_eq!((request.width_mm, request.height_mm), (120.0, 80.0));
-    assert!(h.state().scientific.graph_pending.get(&(pca.document_uid, pca.panel_id)).is_none());
+    assert!(!h.state().scientific.graph_pending.contains_key(&(pca.document_uid, pca.panel_id)));
 }
 
 #[test]

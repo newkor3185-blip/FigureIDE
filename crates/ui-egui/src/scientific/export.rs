@@ -97,10 +97,11 @@ pub fn export_figure_svg(app: &VectorcraftApp, options: &FigureExportOptions) ->
         return Err(format!("Destination file already exists: {target_path}"));
     }
 
-    if let Some(parent) = path_obj.parent() {
-        if !parent.as_os_str().is_empty() && !parent.exists() {
-            return Err(format!("Destination directory does not exist: {}", parent.display()));
-        }
+    if let Some(parent) = path_obj.parent()
+        && !parent.as_os_str().is_empty()
+        && !parent.exists()
+    {
+        return Err(format!("Destination directory does not exist: {}", parent.display()));
     }
 
     let prepared = prepare_figure_document(doc);
@@ -144,10 +145,11 @@ pub fn export_figure_pdf(app: &VectorcraftApp, options: &FigureExportOptions) ->
         return Err(format!("Destination file already exists: {target_path}"));
     }
 
-    if let Some(parent) = path_obj.parent() {
-        if !parent.as_os_str().is_empty() && !parent.exists() {
-            return Err(format!("Destination directory does not exist: {}", parent.display()));
-        }
+    if let Some(parent) = path_obj.parent()
+        && !parent.as_os_str().is_empty()
+        && !parent.exists()
+    {
+        return Err(format!("Destination directory does not exist: {}", parent.display()));
     }
 
     let prepared = prepare_figure_document(doc);

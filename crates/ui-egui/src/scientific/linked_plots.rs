@@ -100,10 +100,10 @@ fn linked_panel_entries(app: &mut crate::VectorcraftApp, ui: &mut egui::Ui) {
                 });
             }
             ui.horizontal_wrapped(|ui| {
-                if panel_action(ui, "Unlink", true, false).on_hover_text("Remove the R association and keep the vector artwork.").clicked() {
-                    if let Err(error) = app.run("ui.unlinkRPanel", serde_json::json!({"panel": panel.panel_id})) {
-                        app.scientific.r_status = format!("Could not unlink panel: {error}");
-                    }
+                if panel_action(ui, "Unlink", true, false).on_hover_text("Remove the R association and keep the vector artwork.").clicked()
+                    && let Err(error) = app.run("ui.unlinkRPanel", serde_json::json!({"panel": panel.panel_id}))
+                {
+                    app.scientific.r_status = format!("Could not unlink panel: {error}");
                 }
                 if app.scientific.delete_artwork_confirmation == Some(panel.panel_id) {
                     ui.label("Delete this panel's vector artwork?");
@@ -246,7 +246,7 @@ pub(super) fn apply_rendered_plot(app: &mut crate::VectorcraftApp, rendered: Ren
             apply_reflow(app, panel_id, target_generated_id, generated_id, width_mm, height_mm, None);
         }
         PanelAction::Graph { panel_id, generated_id: target_generated_id, width_mm, height_mm, style } => {
-            apply_reflow(app, panel_id, target_generated_id, generated_id, width_mm, height_mm, Some(style));
+            apply_reflow(app, panel_id, target_generated_id, generated_id, width_mm, height_mm, Some(*style));
         }
         PanelAction::Create { .. } => {}
     }

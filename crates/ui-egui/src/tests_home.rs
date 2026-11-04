@@ -261,9 +261,8 @@ fn visible_home_texts(
     texts
 }
 
-/// Home scrolls when it is taller than the window: in a short window the Community section and
-/// the last preset card are below the fold, the wheel brings them into view, and a card scrolled
-/// into view still opens its preset.
+/// Home scrolls when it is taller than the window: in a short window the project links and the
+/// last preset card are below the fold, the wheel brings them into view, and a card still opens.
 #[test]
 fn home_scrolls_in_a_short_window() {
     let mut app = VectorcraftApp::new(vectorcraft_engine::Session::new(), crate::Services::default());
@@ -289,7 +288,7 @@ fn home_scrolls_in_a_short_window() {
     for i in 2..40 {
         texts = visible_home_texts(&mut app, &ctx, size, f64::from(i) * 0.1, vec![]);
     }
-    assert!(has(&texts, "Community"), "the wheel reaches the bottom: {texts:?}");
+    assert!(has(&texts, "Report an issue"), "the wheel reaches the last project link: {texts:?}");
     assert!(!has(&texts, "Welcome to FigureIDE"), "the top scrolled away");
     // The last preset card, scrolled into view, still takes a click.
     let card = texts.iter().find(|(t, _)| t.starts_with("Social Square Post")).map(|(_, r)| r.center()).unwrap();

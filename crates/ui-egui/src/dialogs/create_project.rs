@@ -40,10 +40,10 @@ fn heading(d: &Dialog) -> String {
 }
 
 fn ok_label(app: &VectorcraftApp) -> &'static str {
-    if let Some(ref d) = app.ui.dialog {
-        if d.str("mode") == "saveAs" || d.str("mode") == "save" {
-            return "Save Project";
-        }
+    if let Some(ref d) = app.ui.dialog
+        && (d.str("mode") == "saveAs" || d.str("mode") == "save")
+    {
+        return "Save Project";
     }
     "Create Project"
 }
@@ -87,11 +87,11 @@ fn body(app: &mut VectorcraftApp, ui: &mut egui::Ui, d: &mut Dialog) -> bool {
             if loc_response.changed() {
                 d.fields.insert("location".into(), json!(loc));
             }
-            if ui.button("Browse…").clicked() {
-                if let Some(picked) = crate::picks::folder(app) {
-                    d.fields.insert("location".into(), json!(picked));
-                    loc = picked;
-                }
+            if ui.button("Browse…").clicked()
+                && let Some(picked) = crate::picks::folder(app)
+            {
+                d.fields.insert("location".into(), json!(picked));
+                loc = picked;
             }
         });
         ui.end_row();
