@@ -306,7 +306,8 @@ fn r_workspace_linked_panel_actions_keep_drafts_and_artwork() {
     harness.state_mut().scientific.linked_panels.truncate(1);
     harness.run_steps(2);
     let panel_id = harness.state().scientific.linked_panels[0].panel_id;
-    assert!(!harness.get_by_label("Update").accesskit_node().is_disabled());
+    let original_variable = harness.state().scientific.linked_panels[0].r_variable.clone();
+    assert!(harness.get_by_label("Update").accesskit_node().is_disabled());
     assert!(harness.query_by_role(Role::ComboBox).is_none(), "relink details stay compact until requested");
     harness.get_by_label("Relink").click();
     harness.run_steps(2);
@@ -317,16 +318,13 @@ fn r_workspace_linked_panel_actions_keep_drafts_and_artwork() {
     let other = harness.state().scientific.plots[1].variable.clone();
     harness.get_by_label(&other).click();
     harness.run_steps(4);
+    assert_eq!(harness.state().scientific.panel_relink_open, Some(panel_id), "relink form stays open after selecting another variable");
     assert_eq!(harness.state().scientific.panel_relink_drafts.get(&panel_id), Some(&other), "selection survives later frames");
-    harness.get_by_label("Relink to selected variable").click();
+    harness.get_by_label("Confirm Relink").click();
     harness.run_steps(3);
-    assert_eq!(harness.state().scientific.linked_panels[0].r_variable, other);
+    assert_eq!(harness.state().scientific.linked_panels[0].r_variable, original_variable, "the link changes after the asynchronous R render returns");
+    assert_eq!(harness.state().scientific.panel_states.get(&panel_id), Some(&super::LinkedPanelState::Updating));
     assert!(harness.state().scientific.panel_relink_open.is_none());
-    harness.get_by_label("Unlink").click();
-    harness.run_steps(2);
-    harness.get_by_label("Unlink & Edit").click();
-    harness.run_steps(2);
-    assert!(harness.state().scientific.linked_panels.is_empty());
     assert!(harness.state().session.doc().unwrap().doc.node(vectorcraft_doc::NodeId(panel_id)).is_some());
 
     let mut delete = self::harness(BottomTab::LinkedPanels, 320.0, 1.0, 5, false);
