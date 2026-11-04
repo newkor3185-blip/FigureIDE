@@ -4205,7 +4205,7 @@ mod tests {
         let mut app = crate::VectorcraftApp::new(vectorcraft_engine::Session::new(), Default::default());
         app.run("file.new", serde_json::json!({"width": "210 mm", "height": "297 mm"})).unwrap();
         let original = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("../../airway_complete_rnaseq_analysis.R")
+            .join("../../examples/airway/airway_complete_rnaseq_analysis.R")
             .canonicalize()
             .unwrap()
             .to_string_lossy()
@@ -4334,7 +4334,7 @@ mod tests {
         let mut app = crate::VectorcraftApp::new(vectorcraft_engine::Session::new(), Default::default());
         app.run("file.new", serde_json::json!({"width": "210 mm", "height": "297 mm"})).unwrap();
         let original = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("../../airway_complete_rnaseq_analysis.R")
+            .join("../../examples/airway/airway_complete_rnaseq_analysis.R")
             .canonicalize()
             .unwrap()
             .to_string_lossy()
