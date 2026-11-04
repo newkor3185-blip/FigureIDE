@@ -545,7 +545,10 @@ fn r_workspace_stage3_menus_busy_state_and_tools() {
     assert!(h.get_by_label_contains("Stop R").accesskit_node().is_disabled());
     h.state_mut().scientific.running = true;
     h.run_steps(2);
-    assert!(h.get_by_label_contains("Run Selection or Expression").accesskit_node().is_disabled());
+    assert!(
+        !h.get_by_label_contains("Run Selection or Expression").accesskit_node().is_disabled(),
+        "R selections can queue while an execution is running"
+    );
     assert!(h.get_by_label_contains("Source Active Script").accesskit_node().is_disabled());
     assert!(h.get_by_label_contains("Update All Panels").accesskit_node().is_disabled());
     assert!(h.get_by_label_contains("Restart R").accesskit_node().is_disabled());
