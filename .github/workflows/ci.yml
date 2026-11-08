@@ -29,6 +29,8 @@ jobs:
         mkdir -p "$R_LIBS_USER"
         Rscript -e 'ggplot2_archive <- file.path(Sys.getenv("R_LIBS_USER"), "ggplot2_3.5.1.tar.gz"); download.file("https://cran.r-project.org/src/contrib/Archive/ggplot2/ggplot2_3.5.1.tar.gz", ggplot2_archive, quiet = TRUE); install.packages(ggplot2_archive, repos = NULL, type = "source"); stopifnot(packageVersion("ggplot2") >= "3.5.1")'
         Rscript -e 'BiocManager::install("airway", ask = FALSE, update = FALSE)'
+        Rscript -e 'svglite::svglite("r-integration-smoke.svg", width = 7, height = 5); plot(mtcars$wt, mtcars$mpg, main = "FigureIDE R integration smoke test"); grDevices::dev.off(); svg <- paste(readLines("r-integration-smoke.svg"), collapse = "\n"); stopifnot(nchar(svg) > 200, grepl("<svg", svg, fixed = TRUE))'
+        rm -f r-integration-smoke.svg
         cargo xtask ci
       packages: >-
         pkg-config libxkbcommon-dev libwayland-dev libx11-dev libxcb1-dev libxcursor-dev

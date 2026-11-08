@@ -36,9 +36,26 @@ A **project** is a directory; an individual editable **figure** is a `.fide` fil
 
 1. Open [Releases](https://github.com/newkor3185-blip/FigureIDE/releases) and download a Windows x64 portable ZIP **when a verified release is available**.
 2. Extract it to a local folder and start `FigureIDE.exe`.
-3. To run R code and update linked figures, install [R](https://cran.r-project.org/) and the R packages required by your scripts, notably `ggplot2` and `svglite`.
+3. R is optional. Install it separately only if you want to run analysis scripts, manage an R workspace, or re-render R-linked figures. Vector editing, saving `.fide` files, and ordinary SVG/PDF export work without R.
 
 R and user-installed R packages are **not bundled** with the portable ZIP. Saved figure artwork can be viewed without rerunning analyses, but R-linked reflow requires a compatible R environment.
+
+### Optional R setup on Windows
+
+1. Install the current Windows build of [R from CRAN](https://cran.r-project.org/bin/windows/base/). In the installer, keep the option to add R to `PATH` enabled, or add the installed R `bin` folder to `PATH` yourself.
+2. Open R or RStudio and install the packages used by FigureIDE's linked-plot features:
+
+   ```r
+   install.packages(c("ggplot2", "svglite", "systemfonts"), repos = "https://cloud.r-project.org")
+   ```
+
+   Alternatively, in PowerShell after installing R:
+
+   ```powershell
+   Rscript -e 'install.packages(c("ggplot2", "svglite", "systemfonts"), repos = "https://cloud.r-project.org")'
+   ```
+
+3. Restart FigureIDE after installing R or changing `PATH`. If R is unavailable, R-specific actions report that R must be installed; the editor and regular vector file operations remain available.
 
 ## Build from source
 

@@ -23,44 +23,6 @@ jobs:
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
 
-      - name: Set up R
-        uses: r-lib/actions/setup-r@v2
-        with:
-          r-version: 'release'
-
-      - name: Verify R & Install rendering packages (svglite, ggplot2)
-        shell: pwsh
-        run: |
-          Rscript --version
-          Rscript -e 'if (!requireNamespace("svglite", quietly = TRUE)) install.packages("svglite", repos = "https://cloud.r-project.org")'
-          Rscript -e 'if (!requireNamespace("ggplot2", quietly = TRUE)) install.packages("ggplot2", repos = "https://cloud.r-project.org")'
-
-      - name: Release-specific SVG smoke test
-        shell: pwsh
-        run: |
-          # Generate a deterministic ggplot and export via svglite
-          Rscript -e '
-            library(ggplot2)
-            p <- ggplot(mtcars, aes(wt, mpg)) + geom_point(colour = "#e41a1c", size = 2) + ggtitle("CI Smoke Test")
-            svglite::svglite("smoke_test.svg", width = 7, height = 5)
-            print(p)
-            dev.off()
-          '
-          if (-not (Test-Path "smoke_test.svg")) {
-            Write-Error "Smoke test SVG was not generated!"
-            exit 1
-          }
-          $svgContent = Get-Content "smoke_test.svg" -Raw
-          if ($svgContent.Length -lt 200) {
-            Write-Error "Smoke test SVG is unexpectedly small ($($svgContent.Length) bytes)"
-            exit 1
-          }
-          if (-not ($svgContent -match "<svg")) {
-            Write-Error "Smoke test SVG does not contain <svg root element"
-            exit 1
-          }
-          Write-Host "Smoke test SVG generated successfully: $($svgContent.Length) bytes"
-
       - name: Build FigureIDE
         shell: pwsh
         run: cargo build --locked --release -p vectorcraft
@@ -149,11 +111,12 @@ jobs:
           
           R Requirements & Diagnostics:
           -----------------------------
-          To run analysis scripts or re-render linked figures:
-          1. Install R (>= 4.0 recommended) from https://cloud.r-project.org
-          2. Install rendering dependencies:
-               install.packages(c("svglite", "ggplot2"), repos = "https://cloud.r-project.org")
-          3. Use the Environment panel or Packages tab to inspect installed packages.
+          R is optional. Vector editing, .fide viewing/saving, and regular SVG/PDF export work without R.
+          Install R only to run analysis scripts or re-render R-linked figures:
+          1. Install R (>= 4.0 recommended) from https://cran.r-project.org/bin/windows/base/
+          2. In R or RStudio, install the rendering packages:
+               install.packages(c("ggplot2", "svglite", "systemfonts"), repos = "https://cloud.r-project.org")
+          3. Restart FigureIDE and use the Environment panel or Packages tab to inspect packages.
           
           Optional .fide File Association:
           --------------------------------
@@ -230,6 +193,97 @@ jobs:
 
           Remove-Item -Recurse -Force $testExtract
           Write-Host "Portable package validation passed."
+
+      - name: Start FigureIDE without an R environment
+        shell: pwsh
+        run: |
+          $exe = (Get-ChildItem -Path $env:PACKAGE_FOLDER -Filter "FigureIDE.exe" -Recurse | Select-Object -First 1).FullName
+          $previousPath = $env:PATH
+          $previousRHome = $env:R_HOME
+          $process = $null
+          try {
+            $env:PATH = "$env:SystemRoot\System32;$env:SystemRoot"
+            Remove-Item Env:R_HOME -ErrorAction SilentlyContinue
+            $port = Get-Random -Minimum 30000 -Maximum 50000
+            $writeRoot = $env:RUNNER_TEMP
+            $process = Start-Process -FilePath $exe -ArgumentList "--control $port --automation-write-root `"$writeRoot`"" -PassThru -WindowStyle Hidden
+            $ready = $false
+            for ($attempt = 0; $attempt -lt 60; $attempt++) {
+              if ($process.HasExited) {
+                throw "FigureIDE exited before the control server became ready (exit code $($process.ExitCode))."
+              }
+              $client = [System.Net.Sockets.TcpClient]::new()
+              try {
+                $client.Connect("127.0.0.1", $port)
+                $ready = $true
+                break
+              } catch {
+                Start-Sleep -Seconds 1
+              } finally {
+                $client.Dispose()
+              }
+            }
+            if (-not $ready) {
+              throw "FigureIDE did not start its control server within 60 seconds without R in PATH or R_HOME."
+            }
+            function Invoke-FigureIDEControl([string]$method, [hashtable]$params) {
+              $client = [System.Net.Sockets.TcpClient]::new()
+              try {
+                $client.Connect("127.0.0.1", $port)
+                $stream = $client.GetStream()
+                $encoding = [System.Text.UTF8Encoding]::new($false)
+                $writer = [System.IO.StreamWriter]::new($stream, $encoding, 1024, $true)
+                $reader = [System.IO.StreamReader]::new($stream, $encoding, $false, 1024, $true)
+                $request = @{ id = 1; method = $method; params = $params } | ConvertTo-Json -Compress -Depth 20
+                $writer.WriteLine($request)
+                $writer.Flush()
+                $line = $reader.ReadLine()
+                if ([string]::IsNullOrWhiteSpace($line)) {
+                  throw "FigureIDE returned no response to $method."
+                }
+                $response = $line | ConvertFrom-Json
+                if (-not $response.ok) {
+                  throw "FigureIDE $method failed: $($response.error)"
+                }
+                return $response.result
+              } finally {
+                $client.Dispose()
+              }
+            }
+            Invoke-FigureIDEControl "engine.execute" @{ command = "shape.rectangle"; params = @{ x = 10; y = 10; width = 80; height = 50 } } | Out-Null
+            $project = Join-Path $writeRoot "r-free-smoke.fide"
+            $svg = Join-Path $writeRoot "r-free-smoke.svg"
+            $pdf = Join-Path $writeRoot "r-free-smoke.pdf"
+            Invoke-FigureIDEControl "app.save" @{ path = $project; wait = $true } | Out-Null
+            Invoke-FigureIDEControl "app.export" @{ path = $svg; format = "svg"; wait = $true } | Out-Null
+            Invoke-FigureIDEControl "app.export" @{ path = $pdf; format = "pdf"; wait = $true } | Out-Null
+            foreach ($file in @($project, $svg, $pdf)) {
+              if (-not (Test-Path $file) -or (Get-Item $file).Length -eq 0) {
+                throw "Expected R-free vector output was not written: $file"
+              }
+            }
+            if (-not (Get-Content -LiteralPath $svg -Raw).Contains("<svg")) {
+              throw "The R-free SVG export is missing its SVG root element."
+            }
+            $pdfHeader = [System.Text.Encoding]::ASCII.GetString([System.IO.File]::ReadAllBytes($pdf)[0..4])
+            if ($pdfHeader -ne "%PDF-") {
+              throw "The R-free PDF export has an invalid PDF signature."
+            }
+            Write-Host "FigureIDE started, edited, saved, and exported SVG/PDF without an R environment."
+          } finally {
+            if ($null -ne $process -and -not $process.HasExited) {
+              Stop-Process -Id $process.Id -Force
+            }
+            foreach ($file in @("r-free-smoke.fide", "r-free-smoke.svg", "r-free-smoke.pdf")) {
+              Remove-Item -LiteralPath (Join-Path $env:RUNNER_TEMP $file) -Force -ErrorAction SilentlyContinue
+            }
+            $env:PATH = $previousPath
+            if ($null -eq $previousRHome) {
+              Remove-Item Env:R_HOME -ErrorAction SilentlyContinue
+            } else {
+              $env:R_HOME = $previousRHome
+            }
+          }
 
       - name: Upload ZIP as workflow artifact
         uses: actions/upload-artifact@v4
