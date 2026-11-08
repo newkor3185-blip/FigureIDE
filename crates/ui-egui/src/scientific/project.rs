@@ -500,6 +500,7 @@ pub(crate) fn apply_fide_project_folder(app: &mut VectorcraftApp, project: FideP
 /// Writes to a temporary staging file first (`workspace/workspace.RData.tmp.<pid>`) and verifies it,
 /// before atomically replacing the destination file. If R fails or serialization aborts, any existing
 /// `workspace.RData` remains completely intact and valid.
+#[cfg(not(target_arch = "wasm32"))]
 pub(crate) fn save_r_workspace_to_project_atomic(app: &mut VectorcraftApp, project_dir: &Path) -> Result<(usize, u64), String> {
     if !app.scientific.session_active {
         return Err("R session is not active — cannot save R workspace".into());
@@ -546,6 +547,11 @@ pub(crate) fn save_r_workspace_to_project_atomic(app: &mut VectorcraftApp, proje
     app.scientific.session_active = true;
     app.scientific.project_rdata_reference = Some(final_path.to_string_lossy().into_owned());
     Ok((count, bytes))
+}
+
+#[cfg(target_arch = "wasm32")]
+pub(crate) fn save_r_workspace_to_project_atomic(_app: &mut VectorcraftApp, _project_dir: &Path) -> Result<(usize, u64), String> {
+    Err("Saving an R workspace requires the native desktop R session".into())
 }
 
 /// Save the current project to the given path (folder-based).
@@ -702,6 +708,7 @@ pub(crate) fn save_figure_as_command(app: &mut VectorcraftApp, p: &Value) -> Res
 }
 
 /// Command handler for `r.workspace.save`.
+#[cfg(not(target_arch = "wasm32"))]
 pub(crate) fn save_r_workspace_command(app: &mut VectorcraftApp, p: &Value) -> Result<Value, String> {
     if !app.scientific.session_active {
         let err = "R session is not active — cannot save R workspace".to_string();
@@ -790,6 +797,11 @@ pub(crate) fn save_r_workspace_command(app: &mut VectorcraftApp, p: &Value) -> R
     }
     app.status(format!("R workspace saved to {path} ({count} objects, {bytes} bytes)"));
     Ok(json!({ "path": path, "object_count": count, "size_bytes": bytes }))
+}
+
+#[cfg(target_arch = "wasm32")]
+pub(crate) fn save_r_workspace_command(_app: &mut VectorcraftApp, _p: &Value) -> Result<Value, String> {
+    Err("Saving an R workspace requires the native desktop R session".into())
 }
 
 /// Command handler for `r.workspace.load`.

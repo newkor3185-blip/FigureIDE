@@ -2,6 +2,7 @@
 
 use crate::VectorcraftApp;
 use serde_json::{Value, json};
+#[cfg(not(target_arch = "wasm32"))]
 use std::path::Path;
 use vectorcraft_doc::{Document, NodeKind};
 
@@ -11,6 +12,7 @@ pub struct FigureExportOptions {
     pub figure_index: Option<usize>,
     pub figure_id: Option<String>,
     pub artboard_index: Option<usize>,
+    #[cfg_attr(target_arch = "wasm32", allow(dead_code))]
     pub overwrite: bool,
 }
 
@@ -81,8 +83,7 @@ pub fn sanitize_filename(name: &str) -> String {
     if trimmed.is_empty() { "Figure".into() } else { trimmed.into() }
 }
 
-/// Exports the specified or active figure to publication-quality SVG.
-pub fn export_figure_svg(app: &VectorcraftApp, options: &FigureExportOptions) -> Result<FigureExportResult, String> {
+fn render_figure_svg(app: &VectorcraftApp, options: &FigureExportOptions) -> Result<(FigureExportResult, Vec<u8>), String> {
     let (_idx, figure_name, doc) = resolve_figure(app, options)?;
 
     let artboard_idx = options.artboard_index.unwrap_or(0);
@@ -91,18 +92,6 @@ pub fn export_figure_svg(app: &VectorcraftApp, options: &FigureExportOptions) ->
     let height_mm = (artboard.rect.height() * 25.4 / 72.0 * 1000.0).round() / 1000.0;
 
     let target_path = options.path.clone().unwrap_or_else(|| format!("{}.svg", sanitize_filename(&figure_name)));
-
-    let path_obj = Path::new(&target_path);
-    if path_obj.exists() && !options.overwrite {
-        return Err(format!("Destination file already exists: {target_path}"));
-    }
-
-    if let Some(parent) = path_obj.parent()
-        && !parent.as_os_str().is_empty()
-        && !parent.exists()
-    {
-        return Err(format!("Destination directory does not exist: {}", parent.display()));
-    }
 
     let prepared = prepare_figure_document(doc);
 
@@ -119,18 +108,11 @@ pub fn export_figure_svg(app: &VectorcraftApp, options: &FigureExportOptions) ->
     let mut out = vectorcraft_svg::export_full(&prepared, &svg_opts, None);
     let svg_bytes = out.take_bytes();
 
-    vectorcraft_format::write_atomic(path_obj, &svg_bytes).map_err(|e| format!("Failed to write SVG atomically to {target_path}: {e}"))?;
-
-    let meta = std::fs::metadata(path_obj).map_err(|e| format!("Verification failed for written SVG {target_path}: {e}"))?;
-    if meta.len() != svg_bytes.len() as u64 {
-        return Err(format!("SVG file verification size mismatch for {target_path}"));
-    }
-
-    Ok(FigureExportResult { path: target_path, bytes_written: svg_bytes.len(), width_mm, height_mm, figure_name, warnings: out.warnings })
+    let result = FigureExportResult { path: target_path, bytes_written: svg_bytes.len(), width_mm, height_mm, figure_name, warnings: out.warnings };
+    Ok((result, svg_bytes))
 }
 
-/// Exports the specified or active figure to publication-quality PDF.
-pub fn export_figure_pdf(app: &VectorcraftApp, options: &FigureExportOptions) -> Result<FigureExportResult, String> {
+fn render_figure_pdf(app: &VectorcraftApp, options: &FigureExportOptions) -> Result<(FigureExportResult, Vec<u8>), String> {
     let (_idx, figure_name, doc) = resolve_figure(app, options)?;
 
     let artboard_idx = options.artboard_index.unwrap_or(0);
@@ -139,18 +121,6 @@ pub fn export_figure_pdf(app: &VectorcraftApp, options: &FigureExportOptions) ->
     let height_mm = (artboard.rect.height() * 25.4 / 72.0 * 1000.0).round() / 1000.0;
 
     let target_path = options.path.clone().unwrap_or_else(|| format!("{}.pdf", sanitize_filename(&figure_name)));
-
-    let path_obj = Path::new(&target_path);
-    if path_obj.exists() && !options.overwrite {
-        return Err(format!("Destination file already exists: {target_path}"));
-    }
-
-    if let Some(parent) = path_obj.parent()
-        && !parent.as_os_str().is_empty()
-        && !parent.exists()
-    {
-        return Err(format!("Destination directory does not exist: {}", parent.display()));
-    }
 
     let prepared = prepare_figure_document(doc);
 
@@ -164,14 +134,65 @@ pub fn export_figure_pdf(app: &VectorcraftApp, options: &FigureExportOptions) ->
 
     let rep = vectorcraft_pdf::export_with_report(&prepared, &pdf_opts).map_err(|e| format!("PDF export generation failed: {e}"))?;
 
-    vectorcraft_format::write_atomic(path_obj, &rep.bytes).map_err(|e| format!("Failed to write PDF atomically to {target_path}: {e}"))?;
+    let result = FigureExportResult { path: target_path, bytes_written: rep.bytes.len(), width_mm, height_mm, figure_name, warnings: rep.warnings };
+    Ok((result, rep.bytes))
+}
 
-    let meta = std::fs::metadata(path_obj).map_err(|e| format!("Verification failed for written PDF {target_path}: {e}"))?;
-    if meta.len() != rep.bytes.len() as u64 {
-        return Err(format!("PDF file verification size mismatch for {target_path}"));
+#[cfg(not(target_arch = "wasm32"))]
+fn validate_native_target(path: &str, overwrite: bool) -> Result<(), String> {
+    let path_obj = Path::new(path);
+    if path_obj.exists() && !overwrite {
+        return Err(format!("Destination file already exists: {path}"));
     }
+    if let Some(parent) = path_obj.parent()
+        && !parent.as_os_str().is_empty()
+        && !parent.exists()
+    {
+        return Err(format!("Destination directory does not exist: {}", parent.display()));
+    }
+    Ok(())
+}
 
-    Ok(FigureExportResult { path: target_path, bytes_written: rep.bytes.len(), width_mm, height_mm, figure_name, warnings: rep.warnings })
+/// Exports the specified or active figure to publication-quality SVG on desktop.
+#[cfg(not(target_arch = "wasm32"))]
+pub fn export_figure_svg(app: &VectorcraftApp, options: &FigureExportOptions) -> Result<FigureExportResult, String> {
+    let (result, bytes) = render_figure_svg(app, options)?;
+    validate_native_target(&result.path, options.overwrite)?;
+    let path = Path::new(&result.path);
+    vectorcraft_format::write_atomic(path, &bytes).map_err(|e| format!("Failed to write SVG atomically to {}: {e}", result.path))?;
+    let meta = std::fs::metadata(path).map_err(|e| format!("Verification failed for written SVG {}: {e}", result.path))?;
+    if meta.len() != bytes.len() as u64 {
+        return Err(format!("SVG file verification size mismatch for {}", result.path));
+    }
+    Ok(result)
+}
+
+/// The path-based exporter is unavailable in the browser; commands use browser downloads instead.
+#[cfg(target_arch = "wasm32")]
+#[allow(dead_code)]
+pub fn export_figure_svg(_app: &VectorcraftApp, _options: &FigureExportOptions) -> Result<FigureExportResult, String> {
+    Err("Use the SVG export command to download a figure in the browser".into())
+}
+
+/// Exports the specified or active figure to publication-quality PDF on desktop.
+#[cfg(not(target_arch = "wasm32"))]
+pub fn export_figure_pdf(app: &VectorcraftApp, options: &FigureExportOptions) -> Result<FigureExportResult, String> {
+    let (result, bytes) = render_figure_pdf(app, options)?;
+    validate_native_target(&result.path, options.overwrite)?;
+    let path = Path::new(&result.path);
+    vectorcraft_format::write_atomic(path, &bytes).map_err(|e| format!("Failed to write PDF atomically to {}: {e}", result.path))?;
+    let meta = std::fs::metadata(path).map_err(|e| format!("Verification failed for written PDF {}: {e}", result.path))?;
+    if meta.len() != bytes.len() as u64 {
+        return Err(format!("PDF file verification size mismatch for {}", result.path));
+    }
+    Ok(result)
+}
+
+/// The path-based exporter is unavailable in the browser; commands use browser downloads instead.
+#[cfg(target_arch = "wasm32")]
+#[allow(dead_code)]
+pub fn export_figure_pdf(_app: &VectorcraftApp, _options: &FigureExportOptions) -> Result<FigureExportResult, String> {
+    Err("Use the PDF export command to download a figure in the browser".into())
 }
 
 /// Command handler for `figure.export.svg` / `figure.exportSvg`.
@@ -197,8 +218,15 @@ pub fn export_figure_svg_command(app: &mut VectorcraftApp, p: &Value) -> Result<
         }
     };
 
-    let result =
-        export_figure_svg(app, &FigureExportOptions { path: Some(chosen_path.clone()), figure_index, figure_id, artboard_index, overwrite })?;
+    let options = FigureExportOptions { path: Some(chosen_path.clone()), figure_index, figure_id, artboard_index, overwrite };
+    #[cfg(not(target_arch = "wasm32"))]
+    let result = export_figure_svg(app, &options)?;
+    #[cfg(target_arch = "wasm32")]
+    let result = {
+        let (mut result, bytes) = render_figure_svg(app, &options)?;
+        result.path = crate::io::write_named(app, Some(chosen_path), &result.path.clone(), &bytes)?;
+        result
+    };
 
     app.status(format!("Exported {} to {}", result.figure_name, result.path));
     Ok(json!({
@@ -237,8 +265,15 @@ pub fn export_figure_pdf_command(app: &mut VectorcraftApp, p: &Value) -> Result<
         }
     };
 
-    let result =
-        export_figure_pdf(app, &FigureExportOptions { path: Some(chosen_path.clone()), figure_index, figure_id, artboard_index, overwrite })?;
+    let options = FigureExportOptions { path: Some(chosen_path.clone()), figure_index, figure_id, artboard_index, overwrite };
+    #[cfg(not(target_arch = "wasm32"))]
+    let result = export_figure_pdf(app, &options)?;
+    #[cfg(target_arch = "wasm32")]
+    let result = {
+        let (mut result, bytes) = render_figure_pdf(app, &options)?;
+        result.path = crate::io::write_named(app, Some(chosen_path), &result.path.clone(), &bytes)?;
+        result
+    };
 
     app.status(format!("Exported {} to {}", result.figure_name, result.path));
     Ok(json!({

@@ -1630,31 +1630,32 @@ fn request_data_page(workspace: &mut Workspace, name: String, start: usize) {
         return;
     }
     workspace.running = true;
-    let session = workspace.session.clone();
-    let tx = workspace._tx.clone();
-    let ctx = workspace.repaint_ctx.clone();
-    let target_name = name.clone();
     #[cfg(not(target_arch = "wasm32"))]
-    if let Err(error) = std::thread::Builder::new().name("r-data-page".into()).spawn(move || {
-        let result = session
-            .lock()
-            .map_err(|error| format!("R session lock failed: {error}"))
-            .and_then(|mut session| session.data_page(&target_name, start, 50));
-        let _ = tx.send(RMessage::DataPage(target_name, result));
-        if let Some(ctx) = ctx {
-            ctx.request_repaint();
-        }
-    }) {
-        workspace.running = false;
-        workspace.r_status = format!("Could not start data viewer: {error}");
-        if let Some(tab) = workspace.viewer_tabs.iter_mut().find(|t| t.name == name) {
-            tab.loading = false;
-            tab.error = Some(format!("Could not start data viewer: {error}"));
+    {
+        let session = workspace.session.clone();
+        let tx = workspace._tx.clone();
+        let ctx = workspace.repaint_ctx.clone();
+        let target_name = name.clone();
+        if let Err(error) = std::thread::Builder::new().name("r-data-page".into()).spawn(move || {
+            let result = session
+                .lock()
+                .map_err(|error| format!("R session lock failed: {error}"))
+                .and_then(|mut session| session.data_page(&target_name, start, 50));
+            let _ = tx.send(RMessage::DataPage(target_name, result));
+            if let Some(ctx) = ctx {
+                ctx.request_repaint();
+            }
+        }) {
+            workspace.running = false;
+            workspace.r_status = format!("Could not start data viewer: {error}");
+            if let Some(tab) = workspace.viewer_tabs.iter_mut().find(|t| t.name == name) {
+                tab.loading = false;
+                tab.error = Some(format!("Could not start data viewer: {error}"));
+            }
         }
     }
     #[cfg(target_arch = "wasm32")]
     {
-        let _ = (session, tx, ctx, name, start);
         workspace.running = false;
         if let Some(tab) = workspace.viewer_tabs.iter_mut().find(|t| t.name == name) {
             tab.loading = false;
