@@ -191,7 +191,7 @@ jobs:
           & $exe.FullName --help
           & $exe.FullName --version
 
-          Remove-Item -Recurse -Force $testExtract
+          Remove-Item -Recurse -Force $testExtract -ErrorAction SilentlyContinue
           Write-Host "Portable package validation passed."
 
       - name: Start FigureIDE without an R environment
