@@ -64,18 +64,18 @@ jobs:
           ==================================================
           FigureIDE (Windows Portable x64)
           ==================================================
-          
+
           Version: $ver
           Commit:  $commitSha
           Built:   $buildDate
-          
+
           Portable Usage:
           ---------------
           1. Extract this archive to any folder of your choice.
           2. Run FigureIDE.exe directly.
              - No administrator privileges or system installer required.
              - Runs independently without modifying system registry.
-          
+
           Folder-Based FigureIDE Projects:
           --------------------------------
           FigureIDE uses folder-based projects containing:
@@ -85,7 +85,7 @@ jobs:
             ├── workspace/              # R workspace snapshot (workspace.RData)
             ├── figures/                # Individual figure documents (*.fide)
             └── assets/                 # Embedded or referenced assets
-          
+
           Opening Projects & Documents:
           -----------------------------
           - Open Project Folder:
@@ -98,7 +98,7 @@ jobs:
           - Offline Art Viewing:
               Saved figures and Hybrid Linked Plots display instantly with full fidelity
               even on systems without R installed.
-          
+
           Explicit Save / Load R Workspace:
           ---------------------------------
           - FigureIDE separates document vector editing from R memory persistence.
@@ -108,7 +108,7 @@ jobs:
           - To restore your R session:
               Click 'Load R Workspace' in the Environment panel or File ▸ Load R Workspace.
               Includes collision detection and safe reconnection.
-          
+
           R Requirements & Diagnostics:
           -----------------------------
           R is optional. Vector editing, .fide viewing/saving, and regular SVG/PDF export work without R.
@@ -117,14 +117,14 @@ jobs:
           2. In R or RStudio, install the rendering packages:
                install.packages(c("ggplot2", "svglite", "systemfonts"), repos = "https://cloud.r-project.org")
           3. Restart FigureIDE and use the Environment panel or Packages tab to inspect packages.
-          
+
           Optional .fide File Association:
           --------------------------------
           This is a portable ZIP distribution. It does not touch your Windows registry
           unless you choose to run the optional association helper:
           - register-fide-association.cmd: Associates .fide figure files with this executable.
           - unregister-fide-association.cmd: Removes the .fide association.
-          
+
           Issues & Releases:
           ------------------
           GitHub Releases: https://github.com/newkor3185-blip/R_vector_studio/releases
