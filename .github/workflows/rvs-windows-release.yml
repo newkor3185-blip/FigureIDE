@@ -250,16 +250,24 @@ jobs:
                 $client.Dispose()
               }
             }
+            Invoke-FigureIDEControl "engine.execute" @{ command = "file.new"; params = @{ width = 200; height = 200 } } | Out-Null
             Invoke-FigureIDEControl "engine.execute" @{ command = "shape.rectangle"; params = @{ x = 10; y = 10; width = 80; height = 50 } } | Out-Null
-            $project = Join-Path $writeRoot "r-free-smoke.fide"
+            $project = Join-Path $writeRoot "r-free-smoke"
             $svg = Join-Path $writeRoot "r-free-smoke.svg"
             $pdf = Join-Path $writeRoot "r-free-smoke.pdf"
             Invoke-FigureIDEControl "app.save" @{ path = $project; wait = $true } | Out-Null
             Invoke-FigureIDEControl "app.export" @{ path = $svg; format = "svg"; wait = $true } | Out-Null
             Invoke-FigureIDEControl "app.export" @{ path = $pdf; format = "pdf"; wait = $true } | Out-Null
-            foreach ($file in @($project, $svg, $pdf)) {
+            if (-not (Test-Path (Join-Path $project "project.json"))) {
+              throw "The R-free FigureIDE project was not saved."
+            }
+            $figure = Get-ChildItem -Path (Join-Path $project "figures") -Filter "*.fide" | Select-Object -First 1
+            if ($null -eq $figure -or $figure.Length -eq 0) {
+              throw "The R-free .fide figure was not saved."
+            }
+            foreach ($file in @($svg, $pdf)) {
               if (-not (Test-Path $file) -or (Get-Item $file).Length -eq 0) {
-                throw "Expected R-free vector output was not written: $file"
+                throw "Expected R-free vector export was not written: $file"
               }
             }
             if (-not (Get-Content -LiteralPath $svg -Raw).Contains("<svg")) {
@@ -273,9 +281,6 @@ jobs:
           } finally {
             if ($null -ne $process -and -not $process.HasExited) {
               Stop-Process -Id $process.Id -Force
-            }
-            foreach ($file in @("r-free-smoke.fide", "r-free-smoke.svg", "r-free-smoke.pdf")) {
-              Remove-Item -LiteralPath (Join-Path $env:RUNNER_TEMP $file) -Force -ErrorAction SilentlyContinue
             }
             $env:PATH = $previousPath
             if ($null -eq $previousRHome) {
