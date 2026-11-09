@@ -64,7 +64,7 @@ enum RMessage {
     Execution(Result<crate::r_session::Execution, String>, bool, Option<SourceExecutionDefinitions>),
     SourceDefinitions(String, Result<Vec<(u64, usize, String)>, String>),
     Session(Result<String, String>),
-    Rendered(u64, u64, String, PanelAction, Result<RenderedPlot, String>),
+    Rendered(u64, u64, String, Box<(PanelAction, Result<RenderedPlot, String>)>),
     DataPage(String, Result<crate::r_session::DataPage, String>),
     EnvironmentAction(Result<crate::r_session::Execution, String>),
     Help(Result<String, String>),
@@ -136,7 +136,7 @@ struct GraphRenderRequest {
 impl GraphRenderRequest {
     fn matches(&self, action: &PanelAction) -> bool {
         matches!(action, PanelAction::Graph { width_mm, height_mm, style, .. }
-            if self.width_mm == *width_mm && self.height_mm == *height_mm && self.style == *style)
+            if self.width_mm == *width_mm && self.height_mm == *height_mm && self.style == **style)
     }
 }
 
@@ -156,7 +156,7 @@ enum PanelAction {
     Create { label: String, width_mm: f64, height_mm: f64 },
     Refresh { panel_id: u64, generated_id: u64, width_mm: f64, height_mm: f64 },
     Reflow { panel_id: u64, generated_id: u64, width_mm: f64, height_mm: f64 },
-    Graph { panel_id: u64, generated_id: u64, width_mm: f64, height_mm: f64, style: GraphStyle },
+    Graph { panel_id: u64, generated_id: u64, width_mm: f64, height_mm: f64, style: Box<GraphStyle> },
     Relink { panel_id: u64, generated_id: u64, target_variable: String, width_mm: f64, height_mm: f64 },
 }
 
@@ -508,7 +508,7 @@ impl Workspace {
             let p = std::path::Path::new(project_path);
             let base = if p.is_dir() {
                 p
-            } else if p.extension().map_or(false, |ext| ext.eq_ignore_ascii_case("fide")) {
+            } else if p.extension().is_some_and(|ext| ext.eq_ignore_ascii_case("fide")) {
                 p.parent().unwrap_or(p)
             } else {
                 p
@@ -715,10 +715,10 @@ impl Workspace {
             CentralTabId::Script(id) => self.scripts.iter().any(|s| s.id == *id),
             CentralTabId::DataViewer(name) => self.viewer_tabs.iter().any(|v| &v.name == name),
         });
-        if let Some(active_name) = &self.active_viewer_tab {
-            if !self.viewer_tabs.iter().any(|v| &v.name == active_name) {
-                self.active_viewer_tab = None;
-            }
+        if let Some(active_name) = &self.active_viewer_tab
+            && !self.viewer_tabs.iter().any(|v| &v.name == active_name)
+        {
+            self.active_viewer_tab = None;
         }
     }
 
@@ -1630,31 +1630,32 @@ fn request_data_page(workspace: &mut Workspace, name: String, start: usize) {
         return;
     }
     workspace.running = true;
-    let session = workspace.session.clone();
-    let tx = workspace._tx.clone();
-    let ctx = workspace.repaint_ctx.clone();
-    let target_name = name.clone();
     #[cfg(not(target_arch = "wasm32"))]
-    if let Err(error) = std::thread::Builder::new().name("r-data-page".into()).spawn(move || {
-        let result = session
-            .lock()
-            .map_err(|error| format!("R session lock failed: {error}"))
-            .and_then(|mut session| session.data_page(&target_name, start, 50));
-        let _ = tx.send(RMessage::DataPage(target_name, result));
-        if let Some(ctx) = ctx {
-            ctx.request_repaint();
-        }
-    }) {
-        workspace.running = false;
-        workspace.r_status = format!("Could not start data viewer: {error}");
-        if let Some(tab) = workspace.viewer_tabs.iter_mut().find(|t| t.name == name) {
-            tab.loading = false;
-            tab.error = Some(format!("Could not start data viewer: {error}"));
+    {
+        let session = workspace.session.clone();
+        let tx = workspace._tx.clone();
+        let ctx = workspace.repaint_ctx.clone();
+        let target_name = name.clone();
+        if let Err(error) = std::thread::Builder::new().name("r-data-page".into()).spawn(move || {
+            let result = session
+                .lock()
+                .map_err(|error| format!("R session lock failed: {error}"))
+                .and_then(|mut session| session.data_page(&target_name, start, 50));
+            let _ = tx.send(RMessage::DataPage(target_name, result));
+            if let Some(ctx) = ctx {
+                ctx.request_repaint();
+            }
+        }) {
+            workspace.running = false;
+            workspace.r_status = format!("Could not start data viewer: {error}");
+            if let Some(tab) = workspace.viewer_tabs.iter_mut().find(|t| t.name == name) {
+                tab.loading = false;
+                tab.error = Some(format!("Could not start data viewer: {error}"));
+            }
         }
     }
     #[cfg(target_arch = "wasm32")]
     {
-        let _ = (session, tx, ctx, name, start);
         workspace.running = false;
         if let Some(tab) = workspace.viewer_tabs.iter_mut().find(|t| t.name == name) {
             tab.loading = false;
@@ -2491,7 +2492,7 @@ fn start_next_graph(app: &mut crate::VectorcraftApp) {
             generated_id: panel.generated_id,
             width_mm: request.width_mm,
             height_mm: request.height_mm,
-            style: request.style,
+            style: Box::new(request.style),
         },
     );
     if !app.scientific.running {
@@ -2542,7 +2543,7 @@ fn render_plot(workspace: &mut Workspace, document_uid: u64, variable: String, a
                 .is_some_and(|panel| panel.small_figure_typography),
         };
         let graph_style = match &action {
-            PanelAction::Graph { style, .. } => style.clone(),
+            PanelAction::Graph { style, .. } => (**style).clone(),
             PanelAction::Create { .. } => GraphStyle::default(),
             PanelAction::Refresh { panel_id, .. } | PanelAction::Reflow { panel_id, .. } | PanelAction::Relink { panel_id, .. } => workspace
                 .linked_panels
@@ -2565,7 +2566,7 @@ fn render_plot(workspace: &mut Workspace, document_uid: u64, variable: String, a
                     session.render_plot_svg_with_graph_style(&worker_variable, width_mm, height_mm, small_figure_typography, &graph_style)
                 })
                 .map(|(svg, plots)| RenderedPlot { variable: worker_variable, svg, plots, action });
-            let _ = tx.send(RMessage::Rendered(document_uid, render_epoch, message_variable, message_action, result));
+            let _ = tx.send(RMessage::Rendered(document_uid, render_epoch, message_variable, Box::new((message_action, result))));
             if let Some(ctx) = ctx {
                 ctx.request_repaint();
             }
@@ -2750,8 +2751,9 @@ fn poll_messages(app: &mut crate::VectorcraftApp) {
                 app.scientific.pending_rdata_import = None;
                 app.scientific.r_status = error;
             }
-            Ok(RMessage::Rendered(document_uid, render_epoch, variable, action, result)) => {
+            Ok(RMessage::Rendered(document_uid, render_epoch, variable, payload)) => {
                 app.scientific.running = false;
+                let (action, result) = *payload;
                 rendered.push((document_uid, render_epoch, variable, action, result));
             }
             Ok(RMessage::DataPage(name, Ok(page))) => {
@@ -3871,8 +3873,14 @@ mod tests {
         let rendered = |action: PanelAction| Ok(super::RenderedPlot { variable: "plot_A".into(), svg: column_plot_svg(), plots: Vec::new(), action });
         let original_document = app.session.doc().unwrap().doc.clone();
         let wrong_child = PanelAction::Refresh { panel_id: panel.panel_id, generated_id: panel.generated_id + 1, width_mm: 70.0, height_mm: 50.0 };
-        app.scientific._tx.send(RMessage::Rendered(panel.document_uid, 0, "plot_A".into(), wrong_child.clone(), rendered(wrong_child))).unwrap();
-        app.scientific._tx.send(RMessage::Rendered(panel.document_uid, 0, "other_plot".into(), action.clone(), rendered(action.clone()))).unwrap();
+        app.scientific
+            ._tx
+            .send(RMessage::Rendered(panel.document_uid, 0, "plot_A".into(), Box::new((wrong_child.clone(), rendered(wrong_child)))))
+            .unwrap();
+        app.scientific
+            ._tx
+            .send(RMessage::Rendered(panel.document_uid, 0, "other_plot".into(), Box::new((action.clone(), rendered(action.clone())))))
+            .unwrap();
         poll_messages(&mut app);
         assert_eq!(app.session.doc().unwrap().doc, original_document);
 
@@ -3880,7 +3888,10 @@ mod tests {
         app.run("edit.undo", serde_json::json!({})).unwrap();
         assert_eq!(app.scientific.render_epoch.get(&panel.document_uid), Some(&1));
         let after_undo = app.session.doc().unwrap().doc.clone();
-        app.scientific._tx.send(RMessage::Rendered(panel.document_uid, 0, "plot_A".into(), action.clone(), rendered(action.clone()))).unwrap();
+        app.scientific
+            ._tx
+            .send(RMessage::Rendered(panel.document_uid, 0, "plot_A".into(), Box::new((action.clone(), rendered(action.clone())))))
+            .unwrap();
         poll_messages(&mut app);
         assert_eq!(app.session.doc().unwrap().doc, after_undo);
 
@@ -3892,7 +3903,10 @@ mod tests {
         super::start_next_refresh(&mut app);
         assert!(!app.scientific.running);
         assert_eq!(app.scientific.pending_refresh.len(), 1, "another document's refresh must remain queued");
-        app.scientific._tx.send(RMessage::Rendered(panel.document_uid, 0, "plot_A".into(), action.clone(), rendered(action.clone()))).unwrap();
+        app.scientific
+            ._tx
+            .send(RMessage::Rendered(panel.document_uid, 0, "plot_A".into(), Box::new((action.clone(), rendered(action.clone())))))
+            .unwrap();
         poll_messages(&mut app);
         assert_eq!(app.session.doc().unwrap().doc, other_document);
     }
@@ -3908,8 +3922,7 @@ mod tests {
                 0,
                 0,
                 "plot_A".into(),
-                action.clone(),
-                Ok(super::RenderedPlot { variable: "plot_A".into(), svg: column_plot_svg(), plots: Vec::new(), action }),
+                Box::new((action.clone(), Ok(super::RenderedPlot { variable: "plot_A".into(), svg: column_plot_svg(), plots: Vec::new(), action }))),
             ))
             .unwrap();
         poll_messages(&mut app);
@@ -4193,7 +4206,7 @@ mod tests {
         let mut app = crate::VectorcraftApp::new(vectorcraft_engine::Session::new(), Default::default());
         app.run("file.new", serde_json::json!({"width": "210 mm", "height": "297 mm"})).unwrap();
         let original = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("../../airway_complete_rnaseq_analysis.R")
+            .join("../../examples/airway/airway_complete_rnaseq_analysis.R")
             .canonicalize()
             .unwrap()
             .to_string_lossy()
@@ -4322,7 +4335,7 @@ mod tests {
         let mut app = crate::VectorcraftApp::new(vectorcraft_engine::Session::new(), Default::default());
         app.run("file.new", serde_json::json!({"width": "210 mm", "height": "297 mm"})).unwrap();
         let original = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("../../airway_complete_rnaseq_analysis.R")
+            .join("../../examples/airway/airway_complete_rnaseq_analysis.R")
             .canonicalize()
             .unwrap()
             .to_string_lossy()

@@ -1394,6 +1394,7 @@ mod tests {
     /// (one row per type): shared-mime-info's, or one that `ai.storyteller.vectorcraft.mime.xml`
     /// declares.
     const LINUX_TYPES: &[(&str, &str)] = &[
+        ("fide", "application/x-figureide"),
         ("vectorcraft", "application/x-vectorcraft"),
         ("drawcraft", "application/x-vectorcraft"),
         ("svg", "image/svg+xml"),

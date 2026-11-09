@@ -1802,7 +1802,7 @@ mod tests {
 
     /// A command bound to Cmd+Enter runs without the active tool's Enter: the Selection tool opens
     /// no Move dialog, the Type tool types no line break, and the Pen tool's path stays open. With
-    /// nothing bound to it, Cmd+Enter goes to the tool as Enter does.
+    /// nothing bound to it, Cmd+Enter does not become a bare Enter for the active tool.
     #[test]
     fn a_command_on_cmd_enter_runs_without_the_tools_enter() {
         let mut app = VectorcraftApp::new(vectorcraft_engine::Session::new(), Default::default());
@@ -1812,9 +1812,6 @@ mod tests {
         let grid = app.ui.view.grid;
         app.select_tool("selection");
         app.session.execute("select.set", &json!({"ids": [id]})).unwrap();
-        frame(&mut app, press(Key::Enter, Modifiers::COMMAND));
-        assert_eq!((kind(&app).as_deref(), app.ui.view.grid), (Some("move"), grid), "nothing bound: Cmd+Enter opens Move as Enter does");
-        app.ui.dialog = None;
         bind_grid(&mut app, Some("Cmd+Enter"));
         frame(&mut app, press(Key::Enter, Modifiers::COMMAND));
         assert_eq!((kind(&app), app.ui.view.grid), (None, !grid), "Cmd+Enter runs Show Grid only");
@@ -1836,7 +1833,9 @@ mod tests {
         assert_eq!((click_at(&mut app, 200.0), app.ui.view.grid), (objects, !grid), "Cmd+Enter runs Show Grid and the path stays open");
         bind_grid(&mut app, None);
         frame(&mut app, press(Key::Enter, Modifiers::COMMAND));
-        assert_eq!(click_at(&mut app, 250.0), objects + 1, "nothing bound: Cmd+Enter ends the path as Enter does");
+        assert_eq!(click_at(&mut app, 250.0), objects, "unbound Cmd+Enter leaves the path open");
+        frame(&mut app, press(Key::Enter, Modifiers::NONE));
+        assert_eq!(click_at(&mut app, 300.0), objects + 1, "bare Enter ends the path");
     }
 
     /// A command bound to Cmd+Escape runs without the active tool's Escape: the Pen tool's path

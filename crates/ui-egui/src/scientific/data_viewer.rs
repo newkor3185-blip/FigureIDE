@@ -126,7 +126,6 @@ pub(crate) fn show_data_viewer_tab(workspace: &mut Workspace, ui: &mut Ui, heigh
             }
             if action_close_tab {
                 workspace.close_data_viewer(name);
-                return;
             }
         } else if workspace.viewer_tabs[tab_idx].page.is_none() && workspace.viewer_tabs[tab_idx].loading {
             ui.vertical_centered(|ui| {
@@ -238,7 +237,6 @@ pub(crate) fn show_data_viewer_tab(workspace: &mut Workspace, ui: &mut Ui, heigh
             }
             if action_close_tab {
                 workspace.close_data_viewer(name);
-                return;
             }
         }
     });

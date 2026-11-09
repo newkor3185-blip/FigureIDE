@@ -24,7 +24,16 @@ jobs:
       # Same craft-fonts commit as release.yml.
       craft-fonts-ref: b076417b5880bd4154bd22f00695b1d28c6bea83
       timeout-minutes: 90
+      command: |
+        export R_LIBS_USER="$RUNNER_TEMP/R-library"
+        mkdir -p "$R_LIBS_USER"
+        Rscript -e 'ggplot2_archive <- file.path(Sys.getenv("R_LIBS_USER"), "ggplot2_3.5.1.tar.gz"); download.file("https://cran.r-project.org/src/contrib/Archive/ggplot2/ggplot2_3.5.1.tar.gz", ggplot2_archive, quiet = TRUE); install.packages(ggplot2_archive, repos = NULL, type = "source"); stopifnot(packageVersion("ggplot2") >= "3.5.1")'
+        Rscript -e 'BiocManager::install("airway", ask = FALSE, update = FALSE)'
+        Rscript -e 'svglite::svglite("r-integration-smoke.svg", width = 7, height = 5); plot(mtcars$wt, mtcars$mpg, main = "FigureIDE R integration smoke test"); grDevices::dev.off(); svg <- paste(readLines("r-integration-smoke.svg"), collapse = "\n"); stopifnot(nchar(svg) > 200, grepl("<svg", svg, fixed = TRUE))'
+        rm -f r-integration-smoke.svg
+        cargo xtask ci
       packages: >-
         pkg-config libxkbcommon-dev libwayland-dev libx11-dev libxcb1-dev libxcursor-dev
         libxrandr-dev libxi-dev libfontconfig1-dev libfreetype-dev mesa-vulkan-drivers
-        libgl1-mesa-dev
+        libgl1-mesa-dev r-base r-cran-biocmanager r-cran-ggplot2 r-cran-svglite r-cran-pheatmap
+        r-bioc-deseq2 r-bioc-summarizedexperiment

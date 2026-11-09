@@ -49,21 +49,19 @@ pub(crate) fn build_fide_project(app: &VectorcraftApp) -> Result<FideProject, St
         let mut svg_string = None;
         let mut preview_png = None;
 
-        if let Some(ref st) = active_doc {
-            // Find placed document SVG key from node hierarchy
-            if let Some(node) = st.doc.node(vectorcraft_doc::NodeId(panel.generated_id)) {
-                if let Some(children) = node.children() {
-                    for child in children {
-                        if let vectorcraft_doc::NodeKind::PlacedDocument(ref placed) = child.kind {
-                            if placed.key.starts_with("rvs-svg-") {
-                                if let Some(blob) = st.doc.images.get(&placed.key) {
-                                    svg_string = String::from_utf8(blob.bytes.to_vec()).ok();
-                                    if let Some(ref proxy) = blob.proxy {
-                                        preview_png = Some((**proxy).clone());
-                                    }
-                                }
-                            }
-                        }
+        if let Some(st) = active_doc
+            && let Some(node) = st.doc.node(vectorcraft_doc::NodeId(panel.generated_id))
+            && let Some(children) = node.children()
+        {
+            // Find placed document SVG key from node hierarchy.
+            for child in children {
+                if let vectorcraft_doc::NodeKind::PlacedDocument(ref placed) = child.kind
+                    && placed.key.starts_with("rvs-svg-")
+                    && let Some(blob) = st.doc.images.get(&placed.key)
+                {
+                    svg_string = String::from_utf8(blob.bytes.to_vec()).ok();
+                    if let Some(ref proxy) = blob.proxy {
+                        preview_png = Some((**proxy).clone());
                     }
                 }
             }
@@ -199,40 +197,38 @@ pub(crate) fn apply_fide_project(app: &mut VectorcraftApp, project: FideProject,
             .filter_map(|t| {
                 if let Some(id_str) = t.strip_prefix("script:") {
                     id_str.parse::<u64>().ok().map(CentralTabId::Script)
-                } else if let Some(name) = t.strip_prefix("viewer:") {
-                    Some(CentralTabId::DataViewer(name.to_string()))
                 } else {
-                    None
+                    t.strip_prefix("viewer:").map(|name| CentralTabId::DataViewer(name.to_string()))
                 }
             })
             .collect();
     }
     app.scientific.viewer_tabs.clear();
     for tab in &app.scientific.tab_order {
-        if let CentralTabId::DataViewer(name) = tab {
-            if !app.scientific.viewer_tabs.iter().any(|v| &v.name == name) {
-                app.scientific.viewer_tabs.push(super::DataViewerTab {
-                    name: name.clone(),
-                    page_start: 0,
-                    page_size: 50,
-                    page: None,
-                    error: None,
-                    filter: String::new(),
-                    sort_column: None,
-                    sort_ascending: true,
-                    loading: false,
-                });
-            }
+        if let CentralTabId::DataViewer(name) = tab
+            && !app.scientific.viewer_tabs.iter().any(|v| &v.name == name)
+        {
+            app.scientific.viewer_tabs.push(super::DataViewerTab {
+                name: name.clone(),
+                page_start: 0,
+                page_size: 50,
+                page: None,
+                error: None,
+                filter: String::new(),
+                sort_column: None,
+                sort_ascending: true,
+                loading: false,
+            });
         }
     }
     if let Some(active) = project.layout.active_tab {
         if let Some(name) = active.strip_prefix("viewer:") {
             app.scientific.active_viewer_tab = Some(name.to_string());
-        } else if let Some(id_str) = active.strip_prefix("script:") {
-            if let Ok(id) = id_str.parse::<u64>() {
-                app.scientific.active_script_id = id;
-                app.scientific.active_viewer_tab = None;
-            }
+        } else if let Some(id_str) = active.strip_prefix("script:")
+            && let Ok(id) = id_str.parse::<u64>()
+        {
+            app.scientific.active_script_id = id;
+            app.scientific.active_viewer_tab = None;
         }
     } else if let Some(first) = app.scientific.scripts.first() {
         app.scientific.active_script_id = first.id;
@@ -421,7 +417,7 @@ pub(crate) fn apply_fide_project_folder(app: &mut VectorcraftApp, project: FideP
     let ws_ref = project.metadata.workspace_file.or(project.metadata.layout.rdata_reference);
     app.scientific.project_rdata_reference = if let Some(ref rel_or_abs) = ws_ref {
         if let Some(ref fp) = folder_path {
-            let normalized = rel_or_abs.replace('/', std::path::MAIN_SEPARATOR_STR).replace('\\', std::path::MAIN_SEPARATOR_STR);
+            let normalized = rel_or_abs.replace(['/', '\\'], std::path::MAIN_SEPARATOR_STR);
             let p = Path::new(fp).join(normalized);
             if p.exists() { Some(p.to_string_lossy().into_owned()) } else { Some(rel_or_abs.clone()) }
         } else {
@@ -453,40 +449,38 @@ pub(crate) fn apply_fide_project_folder(app: &mut VectorcraftApp, project: FideP
             .filter_map(|t| {
                 if let Some(id_str) = t.strip_prefix("script:") {
                     id_str.parse::<u64>().ok().map(CentralTabId::Script)
-                } else if let Some(name) = t.strip_prefix("viewer:") {
-                    Some(CentralTabId::DataViewer(name.to_string()))
                 } else {
-                    None
+                    t.strip_prefix("viewer:").map(|name| CentralTabId::DataViewer(name.to_string()))
                 }
             })
             .collect();
     }
     app.scientific.viewer_tabs.clear();
     for tab in &app.scientific.tab_order {
-        if let CentralTabId::DataViewer(name) = tab {
-            if !app.scientific.viewer_tabs.iter().any(|v| &v.name == name) {
-                app.scientific.viewer_tabs.push(super::DataViewerTab {
-                    name: name.clone(),
-                    page_start: 0,
-                    page_size: 50,
-                    page: None,
-                    error: None,
-                    filter: String::new(),
-                    sort_column: None,
-                    sort_ascending: true,
-                    loading: false,
-                });
-            }
+        if let CentralTabId::DataViewer(name) = tab
+            && !app.scientific.viewer_tabs.iter().any(|v| &v.name == name)
+        {
+            app.scientific.viewer_tabs.push(super::DataViewerTab {
+                name: name.clone(),
+                page_start: 0,
+                page_size: 50,
+                page: None,
+                error: None,
+                filter: String::new(),
+                sort_column: None,
+                sort_ascending: true,
+                loading: false,
+            });
         }
     }
     if let Some(active) = project.metadata.layout.active_tab {
         if let Some(name) = active.strip_prefix("viewer:") {
             app.scientific.active_viewer_tab = Some(name.to_string());
-        } else if let Some(id_str) = active.strip_prefix("script:") {
-            if let Ok(id) = id_str.parse::<u64>() {
-                app.scientific.active_script_id = id;
-                app.scientific.active_viewer_tab = None;
-            }
+        } else if let Some(id_str) = active.strip_prefix("script:")
+            && let Ok(id) = id_str.parse::<u64>()
+        {
+            app.scientific.active_script_id = id;
+            app.scientific.active_viewer_tab = None;
         }
     } else if let Some(first) = app.scientific.scripts.first() {
         app.scientific.active_script_id = first.id;
@@ -506,6 +500,7 @@ pub(crate) fn apply_fide_project_folder(app: &mut VectorcraftApp, project: FideP
 /// Writes to a temporary staging file first (`workspace/workspace.RData.tmp.<pid>`) and verifies it,
 /// before atomically replacing the destination file. If R fails or serialization aborts, any existing
 /// `workspace.RData` remains completely intact and valid.
+#[cfg(not(target_arch = "wasm32"))]
 pub(crate) fn save_r_workspace_to_project_atomic(app: &mut VectorcraftApp, project_dir: &Path) -> Result<(usize, u64), String> {
     if !app.scientific.session_active {
         return Err("R session is not active — cannot save R workspace".into());
@@ -554,6 +549,11 @@ pub(crate) fn save_r_workspace_to_project_atomic(app: &mut VectorcraftApp, proje
     Ok((count, bytes))
 }
 
+#[cfg(target_arch = "wasm32")]
+pub(crate) fn save_r_workspace_to_project_atomic(_app: &mut VectorcraftApp, _project_dir: &Path) -> Result<(usize, u64), String> {
+    Err("Saving an R workspace requires the native desktop R session".into())
+}
+
 /// Save the current project to the given path (folder-based).
 pub(crate) fn save_project_to_path(app: &mut VectorcraftApp, path: &str, save_r_workspace: Option<bool>) -> Result<(), String> {
     let mut folder_path = PathBuf::from(path);
@@ -561,10 +561,10 @@ pub(crate) fn save_project_to_path(app: &mut VectorcraftApp, path: &str, save_r_
     if folder_path.extension().and_then(|ext| ext.to_str()).map(|ext| ext.eq_ignore_ascii_case("fide")).unwrap_or(false) {
         folder_path.set_extension("");
     }
-    if folder_path.file_name().and_then(|n| n.to_str()) == Some("project.json") {
-        if let Some(parent) = folder_path.parent().map(Path::to_path_buf) {
-            folder_path = parent;
-        }
+    if folder_path.file_name().and_then(|n| n.to_str()) == Some("project.json")
+        && let Some(parent) = folder_path.parent().map(Path::to_path_buf)
+    {
+        folder_path = parent;
     }
     let project_name = folder_path.file_name().and_then(|n| n.to_str()).unwrap_or("FigureIDE_Project");
 
@@ -708,6 +708,7 @@ pub(crate) fn save_figure_as_command(app: &mut VectorcraftApp, p: &Value) -> Res
 }
 
 /// Command handler for `r.workspace.save`.
+#[cfg(not(target_arch = "wasm32"))]
 pub(crate) fn save_r_workspace_command(app: &mut VectorcraftApp, p: &Value) -> Result<Value, String> {
     if !app.scientific.session_active {
         let err = "R session is not active — cannot save R workspace".to_string();
@@ -778,25 +779,29 @@ pub(crate) fn save_r_workspace_command(app: &mut VectorcraftApp, p: &Value) -> R
     app.scientific.project_rdata_reference = Some(path.clone());
     if let Some(ref proj_path) = app.scientific.project_path {
         let p_json_path = Path::new(proj_path).join("project.json");
-        if p_json_path.exists() {
-            if let Ok(content) = std::fs::read_to_string(&p_json_path) {
-                if let Ok(mut meta) = serde_json::from_str::<ProjectMetadata>(&content) {
-                    let rel_path = if let Ok(rel) = Path::new(&path).strip_prefix(proj_path) {
-                        rel.to_string_lossy().replace('\\', "/")
-                    } else {
-                        "workspace/workspace.RData".into()
-                    };
-                    meta.workspace_file = Some(rel_path);
-                    meta.updated_at = current_iso_time();
-                    if let Ok(updated_bytes) = serde_json::to_vec_pretty(&meta) {
-                        let _ = vectorcraft_format::write_atomic(&p_json_path, &updated_bytes);
-                    }
-                }
+        if p_json_path.exists()
+            && let Ok(content) = std::fs::read_to_string(&p_json_path)
+            && let Ok(mut meta) = serde_json::from_str::<ProjectMetadata>(&content)
+        {
+            let rel_path = if let Ok(rel) = Path::new(&path).strip_prefix(proj_path) {
+                rel.to_string_lossy().replace('\\', "/")
+            } else {
+                "workspace/workspace.RData".into()
+            };
+            meta.workspace_file = Some(rel_path);
+            meta.updated_at = current_iso_time();
+            if let Ok(updated_bytes) = serde_json::to_vec_pretty(&meta) {
+                let _ = vectorcraft_format::write_atomic(&p_json_path, &updated_bytes);
             }
         }
     }
     app.status(format!("R workspace saved to {path} ({count} objects, {bytes} bytes)"));
     Ok(json!({ "path": path, "object_count": count, "size_bytes": bytes }))
+}
+
+#[cfg(target_arch = "wasm32")]
+pub(crate) fn save_r_workspace_command(_app: &mut VectorcraftApp, _p: &Value) -> Result<Value, String> {
+    Err("Saving an R workspace requires the native desktop R session".into())
 }
 
 /// Command handler for `r.workspace.load`.
@@ -881,22 +886,24 @@ pub(crate) fn is_project_dirty(app: &VectorcraftApp) -> bool {
 
 /// Resolve a sensible default parent directory for new/saved projects.
 pub(crate) fn default_project_parent(app: &VectorcraftApp) -> PathBuf {
-    if let Some(ref parent) = app.scientific.last_project_parent {
-        if parent.exists() && parent.is_dir() {
-            return parent.clone();
-        }
+    if let Some(ref parent) = app.scientific.last_project_parent
+        && parent.exists()
+        && parent.is_dir()
+    {
+        return parent.clone();
     }
-    if let Some(ref proj_path) = app.scientific.project_path {
-        if let Some(parent) = Path::new(proj_path).parent() {
-            if parent.exists() && parent.is_dir() {
-                return parent.to_path_buf();
-            }
-        }
+    if let Some(ref proj_path) = app.scientific.project_path
+        && let Some(parent) = Path::new(proj_path).parent()
+        && parent.exists()
+        && parent.is_dir()
+    {
+        return parent.to_path_buf();
     }
-    if let Some(ref wd) = app.scientific.working_directory {
-        if wd.exists() && wd.is_dir() {
-            return wd.clone();
-        }
+    if let Some(ref wd) = app.scientific.working_directory
+        && wd.exists()
+        && wd.is_dir()
+    {
+        return wd.clone();
     }
     #[cfg(target_os = "windows")]
     {
@@ -910,11 +917,12 @@ pub(crate) fn default_project_parent(app: &VectorcraftApp) -> PathBuf {
     #[cfg(not(target_os = "windows"))]
     {
         if let Some(home) = std::env::var_os("HOME") {
-            let docs = PathBuf::from(home).join("Documents");
+            let home = PathBuf::from(home);
+            let docs = home.join("Documents");
             if docs.exists() && docs.is_dir() {
                 return docs;
             }
-            return PathBuf::from(home);
+            return home;
         }
     }
     std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."))
@@ -1318,7 +1326,10 @@ mod tests {
     #[test]
     fn test_authoritative_script_snapshot() {
         let mut app = make_test_app();
-        let external_path = std::env::temp_dir().join("test_authoritative_script.R");
+        let temp_dir = std::env::temp_dir().join(format!("test_authoritative_script_{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&temp_dir);
+        std::fs::create_dir_all(&temp_dir).unwrap();
+        let external_path = temp_dir.join("test_authoritative_script.R");
         std::fs::write(&external_path, "external_code <- 100\n").unwrap();
 
         // In app, the user has edited the buffer to something else
@@ -1330,7 +1341,7 @@ mod tests {
             None,
         ));
 
-        let project_path = std::env::temp_dir().join("test_authoritative_script.fide");
+        let project_path = temp_dir.join("project");
         save_project_to_path(&mut app, &project_path.to_string_lossy(), None).expect("save project");
 
         // Verify external file was NOT modified!
@@ -1345,8 +1356,7 @@ mod tests {
         assert_eq!(reopened.scientific.scripts[0].text, "embedded_code <- 200\n");
         assert_eq!(reopened.scientific.scripts[0].path.as_deref(), Some(external_path.to_string_lossy().as_ref()));
 
-        let _ = std::fs::remove_file(external_path);
-        let _ = std::fs::remove_file(project_path);
+        let _ = std::fs::remove_dir_all(temp_dir);
     }
 
     // 3. Hybrid Linked Plot instant preview on reopen: does not trigger R and does not expand to points
@@ -1380,7 +1390,8 @@ mod tests {
             doc.insert(layer_id, usize::MAX, group).unwrap();
         }
 
-        let project_path = std::env::temp_dir().join("test_hybrid_preview.fide");
+        let project_path = std::env::temp_dir().join(format!("test_hybrid_preview_{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&project_path);
         save_project_to_path(&mut app, &project_path.to_string_lossy(), None).expect("save project");
 
         let mut reopened = make_test_app();
@@ -1399,7 +1410,7 @@ mod tests {
         });
         assert_eq!(placed_count, 1);
 
-        let _ = std::fs::remove_file(project_path);
+        let _ = std::fs::remove_dir_all(project_path);
     }
 
     // 4. GraphStyle overrides persistence
@@ -1408,10 +1419,7 @@ mod tests {
         let mut app = make_test_app();
         app.run("file.new", json!({"width": "210 mm", "height": "297 mm"})).unwrap();
 
-        let mut style = GraphStyle::default();
-        style.plot_title_pt = Some(22.0);
-        style.axis_x_line_mm = Some(0.8);
-        style.tick_x_visible = Some(false);
+        let style = GraphStyle { plot_title_pt: Some(22.0), axis_x_line_mm: Some(0.8), tick_x_visible: Some(false), ..Default::default() };
 
         app.scientific.linked_panels.push(RLinkedPanel {
             panel_id: 1,
@@ -1442,7 +1450,8 @@ mod tests {
         app.run("file.new", json!({"width": "210 mm", "height": "297 mm"})).unwrap();
         app.run("shape.rectangle", json!({"x": 10.0, "y": 10.0, "width": 50.0, "height": 30.0})).unwrap();
 
-        let project_path = std::env::temp_dir().join("test_manual_edit.fide");
+        let project_path = std::env::temp_dir().join(format!("test_manual_edit_{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&project_path);
         save_project_to_path(&mut app, &project_path.to_string_lossy(), None).expect("save project");
 
         let mut reopened = make_test_app();
@@ -1457,7 +1466,7 @@ mod tests {
         });
         assert!(rect_count >= 1, "manually added rectangles must be preserved");
 
-        let _ = std::fs::remove_file(project_path);
+        let _ = std::fs::remove_dir_all(project_path);
     }
 
     // 6. Central tab order and active tab restoration
@@ -1611,11 +1620,11 @@ mod tests {
         assert!(is_project_dirty(&app));
 
         // Save project -> clean
-        let project_path = std::env::temp_dir().join("test_dirty_clean.fide");
+        let project_path = std::env::temp_dir().join(format!("test_dirty_clean_{}", std::process::id()));
         save_project_to_path(&mut app, &project_path.to_string_lossy(), None).unwrap();
         assert!(!is_project_dirty(&app));
 
-        let _ = std::fs::remove_file(project_path);
+        let _ = std::fs::remove_dir_all(project_path);
     }
 
     // 14. Ctrl+S saves project in FigureIDE mode
@@ -1623,7 +1632,7 @@ mod tests {
     fn test_ctrl_s_project_save() {
         let mut app = make_test_app();
         app.run("file.new", json!({"width": "210 mm", "height": "297 mm"})).unwrap();
-        let project_path = std::env::temp_dir().join("test_ctrl_s.fide");
+        let project_path = std::env::temp_dir().join(format!("test_ctrl_s_{}", std::process::id()));
         app.scientific.project_path = Some(project_path.to_string_lossy().into_owned());
 
         // Make dirty
@@ -1636,8 +1645,9 @@ mod tests {
         // Project should be clean and saved on disk
         assert!(!is_project_dirty(&app));
         assert!(project_path.exists());
+        assert!(project_path.join("project.json").exists());
 
-        let _ = std::fs::remove_file(project_path);
+        let _ = std::fs::remove_dir_all(project_path);
     }
 
     fn sample_r_object(variable: &str, plot_kind: &str) -> crate::r_session::RObject {
@@ -1655,7 +1665,7 @@ mod tests {
     }
 
     fn add_test_panel(app: &mut VectorcraftApp, panel_id: u64, generated_id: u64, r_variable: &str, label: &str, width_mm: f64, height_mm: f64) {
-        add_test_panel_with_style(app, panel_id, generated_id, r_variable, label, width_mm, height_mm, GraphStyle::default(), false);
+        add_test_panel_with_style(app, panel_id, generated_id, r_variable, label, (width_mm, height_mm), (GraphStyle::default(), false));
     }
 
     fn add_test_panel_with_style(
@@ -1664,11 +1674,11 @@ mod tests {
         generated_id: u64,
         r_variable: &str,
         label: &str,
-        width_mm: f64,
-        height_mm: f64,
-        graph_style: GraphStyle,
-        small_figure_typography: bool,
+        dimensions_mm: (f64, f64),
+        appearance: (GraphStyle, bool),
     ) {
+        let (width_mm, height_mm) = dimensions_mm;
+        let (graph_style, small_figure_typography) = appearance;
         let doc_uid = app.session.active().map(|d| d.uid).unwrap_or(1);
         let panel = RLinkedPanel {
             panel_id,
@@ -1999,8 +2009,10 @@ mod tests {
                 doc_uid,
                 epoch,
                 "plot_A".into(),
-                super::super::PanelAction::Refresh { panel_id: 1, generated_id: 2, width_mm: 100.0, height_mm: 75.0 },
-                Err("Evaluation error in ggplot".into()),
+                Box::new((
+                    super::super::PanelAction::Refresh { panel_id: 1, generated_id: 2, width_mm: 100.0, height_mm: 75.0 },
+                    Err("Evaluation error in ggplot".into()),
+                )),
             ))
             .unwrap();
         super::super::poll_messages(&mut app);
@@ -2026,13 +2038,15 @@ mod tests {
                 doc_uid,
                 0,
                 "plot_A".into(),
-                super::super::PanelAction::Refresh { panel_id: 1, generated_id: 2, width_mm: 100.0, height_mm: 75.0 },
-                Ok(super::super::RenderedPlot {
-                    variable: "plot_A".into(),
-                    svg: "<svg></svg>".into(),
-                    plots: vec![],
-                    action: super::super::PanelAction::Refresh { panel_id: 1, generated_id: 2, width_mm: 100.0, height_mm: 75.0 },
-                }),
+                Box::new((
+                    super::super::PanelAction::Refresh { panel_id: 1, generated_id: 2, width_mm: 100.0, height_mm: 75.0 },
+                    Ok(super::super::RenderedPlot {
+                        variable: "plot_A".into(),
+                        svg: "<svg></svg>".into(),
+                        plots: vec![],
+                        action: super::super::PanelAction::Refresh { panel_id: 1, generated_id: 2, width_mm: 100.0, height_mm: 75.0 },
+                    }),
+                )),
             ))
             .unwrap();
         super::super::poll_messages(&mut app);
@@ -2045,10 +2059,8 @@ mod tests {
     fn test_preserve_graph_style_overrides_and_dimensions() {
         let mut app = make_test_app();
         app.run("file.new", json!({"width": "210 mm", "height": "297 mm"})).unwrap();
-        let mut style = GraphStyle::default();
-        style.plot_title_pt = Some(22.0);
-        style.axis_x_line_mm = Some(0.8);
-        add_test_panel_with_style(&mut app, 10, 11, "plot_A", "A", 125.0, 85.0, style, true);
+        let style = GraphStyle { plot_title_pt: Some(22.0), axis_x_line_mm: Some(0.8), ..Default::default() };
+        add_test_panel_with_style(&mut app, 10, 11, "plot_A", "A", (125.0, 85.0), (style, true));
 
         let project = build_fide_project(&app).expect("build");
         let bytes = project.save_to_bytes().expect("save");
@@ -2518,14 +2530,11 @@ mod tests {
         ));
 
         // 3 & 4. Add multiple linked plots (PCA, UMAP, Volcano) with Hybrid Linked SVG
-        let mut style_pca = GraphStyle::default();
-        style_pca.plot_title_pt = Some(18.0);
-        style_pca.axis_x_line_mm = Some(0.6);
-        add_test_panel_with_style(&mut app, 100, 101, "p_pca", "A", 90.0, 70.0, style_pca, true);
+        let style_pca = GraphStyle { plot_title_pt: Some(18.0), axis_x_line_mm: Some(0.6), ..Default::default() };
+        add_test_panel_with_style(&mut app, 100, 101, "p_pca", "A", (90.0, 70.0), (style_pca, true));
 
-        let mut style_umap = GraphStyle::default();
-        style_umap.plot_title_pt = Some(16.0);
-        add_test_panel_with_style(&mut app, 200, 201, "p_umap", "B", 100.0, 80.0, style_umap, false);
+        let style_umap = GraphStyle { plot_title_pt: Some(16.0), ..Default::default() };
+        add_test_panel_with_style(&mut app, 200, 201, "p_umap", "B", (100.0, 80.0), (style_umap, false));
 
         add_test_panel(&mut app, 300, 301, "p_volcano", "C", 85.0, 65.0);
 
@@ -2585,7 +2594,7 @@ mod tests {
 
         // Verify native vector annotations preserved
         let doc = fresh_app.session.doc().unwrap();
-        assert!(doc.doc.layers.len() >= 1);
+        assert!(!doc.doc.layers.is_empty());
         let mut node_count = 0;
         doc.doc.walk(|_| node_count += 1);
         assert!(node_count >= 4, "Must retain native vector annotations alongside linked plots");

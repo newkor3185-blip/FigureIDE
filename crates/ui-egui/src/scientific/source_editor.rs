@@ -78,41 +78,40 @@ pub(super) fn show_source_editor(workspace: &mut Workspace, ui: &mut egui::Ui, h
                                 } else if escape {
                                     workspace.completion = None;
                                     ui.memory_mut(|m| m.request_focus(editor_id));
-                                } else if accept {
-                                    if let Some(active) = workspace.completion.take() {
-                                        if let Some(candidate) = active.candidates.get(active.selected).cloned() {
-                                            let new_cursor_idx = {
-                                                let text = &mut workspace.scripts[script_idx].text;
-                                                let mut state = egui::TextEdit::load_state(ui.ctx(), editor_id).unwrap_or_default();
-                                                let before_range = state.cursor.char_range().unwrap_or_else(|| {
-                                                    egui::text::CCursorRange::one(egui::text::CCursor::new(active.context.replace_end_char))
-                                                });
-                                                let mut undoer = state.undoer();
-                                                undoer.add_undo(&(before_range, text.clone()));
-                                                let idx = crate::r_editor::apply_completion(text, &active.context, &candidate);
-                                                let after_range = egui::text::CCursorRange::one(egui::text::CCursor::new(idx));
-                                                undoer.add_undo(&(after_range, text.clone()));
-                                                state.set_undoer(undoer);
-                                                state.cursor.set_char_range(Some(after_range));
-                                                state.store(ui.ctx(), editor_id);
-                                                idx
-                                            };
+                                } else if accept
+                                    && let Some(active) = workspace.completion.take()
+                                    && let Some(candidate) = active.candidates.get(active.selected).cloned()
+                                {
+                                    let new_cursor_idx = {
+                                        let text = &mut workspace.scripts[script_idx].text;
+                                        let mut state = egui::TextEdit::load_state(ui.ctx(), editor_id).unwrap_or_default();
+                                        let before_range = state.cursor.char_range().unwrap_or_else(|| {
+                                            egui::text::CCursorRange::one(egui::text::CCursor::new(active.context.replace_end_char))
+                                        });
+                                        let mut undoer = state.undoer();
+                                        undoer.add_undo(&(before_range, text.clone()));
+                                        let idx = crate::r_editor::apply_completion(text, &active.context, &candidate);
+                                        let after_range = egui::text::CCursorRange::one(egui::text::CCursor::new(idx));
+                                        undoer.add_undo(&(after_range, text.clone()));
+                                        state.set_undoer(undoer);
+                                        state.cursor.set_char_range(Some(after_range));
+                                        state.store(ui.ctx(), editor_id);
+                                        idx
+                                    };
 
-                                            if candidate.kind == crate::r_editor::CompletionCandidateKind::Directory {
-                                                let script_text = workspace.scripts[script_idx].text.clone();
-                                                if let Some(new_ctx) = crate::r_editor::completion_context_at(&script_text, new_cursor_idx) {
-                                                    let candidates = build_completion_candidates(workspace, active_id, &script_text, &new_ctx);
-                                                    if !candidates.is_empty() {
-                                                        workspace.completion = Some(ActiveCompletion {
-                                                            script_id: active_id,
-                                                            source_revision: script_text,
-                                                            context: new_ctx,
-                                                            candidates,
-                                                            selected: 0,
-                                                            scroll_to_selected: true,
-                                                        });
-                                                    }
-                                                }
+                                    if candidate.kind == crate::r_editor::CompletionCandidateKind::Directory {
+                                        let script_text = workspace.scripts[script_idx].text.clone();
+                                        if let Some(new_ctx) = crate::r_editor::completion_context_at(&script_text, new_cursor_idx) {
+                                            let candidates = build_completion_candidates(workspace, active_id, &script_text, &new_ctx);
+                                            if !candidates.is_empty() {
+                                                workspace.completion = Some(ActiveCompletion {
+                                                    script_id: active_id,
+                                                    source_revision: script_text,
+                                                    context: new_ctx,
+                                                    candidates,
+                                                    selected: 0,
+                                                    scroll_to_selected: true,
+                                                });
                                             }
                                         }
                                     }
@@ -122,14 +121,14 @@ pub(super) fn show_source_editor(workspace: &mut Workspace, ui: &mut egui::Ui, h
                                     let mut found = None;
                                     let mut found_idx = None;
                                     for (idx, event) in input.events.iter().enumerate() {
-                                        if let egui::Event::Text(text) = event {
-                                            if text.len() == 1 {
-                                                let c = text.chars().next().unwrap_or(' ');
-                                                if crate::r_editor::is_open_delimiter(c) || crate::r_editor::is_close_delimiter(c) {
-                                                    found = Some(c);
-                                                    found_idx = Some(idx);
-                                                    break;
-                                                }
+                                        if let egui::Event::Text(text) = event
+                                            && text.len() == 1
+                                        {
+                                            let c = text.chars().next().unwrap_or(' ');
+                                            if crate::r_editor::is_open_delimiter(c) || crate::r_editor::is_close_delimiter(c) {
+                                                found = Some(c);
+                                                found_idx = Some(idx);
+                                                break;
                                             }
                                         }
                                     }
@@ -637,17 +636,17 @@ pub(crate) fn build_completion_candidates(
                     });
                 }
             }
-            if let Some((viewer_name, page)) = &workspace.viewer {
-                if viewer_name == object {
-                    for (col_name, col_type) in &page.columns {
-                        list.push(crate::r_editor::CompletionCandidate {
-                            name: col_name.clone(),
-                            kind: crate::r_editor::CompletionCandidateKind::Column,
-                            signature: None,
-                            detail: col_type.clone(),
-                            source: object.clone(),
-                        });
-                    }
+            if let Some((viewer_name, page)) = &workspace.viewer
+                && viewer_name == object
+            {
+                for (col_name, col_type) in &page.columns {
+                    list.push(crate::r_editor::CompletionCandidate {
+                        name: col_name.clone(),
+                        kind: crate::r_editor::CompletionCandidateKind::Column,
+                        signature: None,
+                        detail: col_type.clone(),
+                        source: object.clone(),
+                    });
                 }
             }
             let (_script_syms, script_cols, _) = crate::r_editor::extract_script_symbols(source);
@@ -742,29 +741,33 @@ pub(crate) fn request_completion_metadata(
                 let tx = workspace._tx.clone();
                 let ctx_repaint = workspace.repaint_ctx.clone();
                 let obj = object.clone();
-                if let Err(_) = std::thread::Builder::new().name("r-completion-meta".into()).spawn(move || {
-                    let Ok(mut session) = session.try_lock() else { return };
-                    let output = session.completion_metadata(&format!("MEMBER\t{obj}")).unwrap_or_default();
-                    let mut cols = Vec::new();
-                    for line in output.lines() {
-                        let mut parts = line.split('\t');
-                        if let (Some(name_hex), Some(type_hex)) = (parts.next(), parts.next()) {
-                            if let (Some(col_name), Some(col_type)) = (crate::r_session::decode_hex(name_hex), crate::r_session::decode_hex(type_hex))
+                if std::thread::Builder::new()
+                    .name("r-completion-meta".into())
+                    .spawn(move || {
+                        let Ok(mut session) = session.try_lock() else { return };
+                        let output = session.completion_metadata(&format!("MEMBER\t{obj}")).unwrap_or_default();
+                        let mut cols = Vec::new();
+                        for line in output.lines() {
+                            let mut parts = line.split('\t');
+                            if let (Some(name_hex), Some(type_hex)) = (parts.next(), parts.next())
+                                && let (Some(col_name), Some(col_type)) =
+                                    (crate::r_session::decode_hex(name_hex), crate::r_session::decode_hex(type_hex))
                             {
                                 cols.push((col_name, col_type));
                             }
                         }
-                    }
-                    let _ = tx.send(RMessage::CompletionMetadata {
-                        script_id,
-                        source_revision,
-                        object_columns: Some((obj, cols)),
-                        namespace_items: None,
-                    });
-                    if let Some(ctx) = ctx_repaint {
-                        ctx.request_repaint();
-                    }
-                }) {
+                        let _ = tx.send(RMessage::CompletionMetadata {
+                            script_id,
+                            source_revision,
+                            object_columns: Some((obj, cols)),
+                            namespace_items: None,
+                        });
+                        if let Some(ctx) = ctx_repaint {
+                            ctx.request_repaint();
+                        }
+                    })
+                    .is_err()
+                {
                     workspace.completion_request_in_flight = false;
                 }
             }
@@ -778,21 +781,23 @@ pub(crate) fn request_completion_metadata(
                 let ctx_repaint = workspace.repaint_ctx.clone();
                 let pkg = package.clone();
                 let is_internal = *internal;
-                if let Err(_) = std::thread::Builder::new().name("r-completion-meta".into()).spawn(move || {
-                    let Ok(mut session) = session.try_lock() else { return };
-                    let output = session.completion_metadata(&format!("NS\t{pkg}\t{}", if is_internal { 1 } else { 0 })).unwrap_or_default();
-                    let mut items = Vec::new();
-                    for line in output.lines() {
-                        let mut parts = line.split('\t');
-                        if let (Some(sym_hex), Some(kind_hex), Some(type_hex), Some(sig_hex)) =
-                            (parts.next(), parts.next(), parts.next(), parts.next())
-                        {
-                            if let (Some(sym), Some(kind), Some(detail), Some(sig)) = (
-                                crate::r_session::decode_hex(sym_hex),
-                                crate::r_session::decode_hex(kind_hex),
-                                crate::r_session::decode_hex(type_hex),
-                                crate::r_session::decode_hex(sig_hex),
-                            ) {
+                if std::thread::Builder::new()
+                    .name("r-completion-meta".into())
+                    .spawn(move || {
+                        let Ok(mut session) = session.try_lock() else { return };
+                        let output = session.completion_metadata(&format!("NS\t{pkg}\t{}", if is_internal { 1 } else { 0 })).unwrap_or_default();
+                        let mut items = Vec::new();
+                        for line in output.lines() {
+                            let mut parts = line.split('\t');
+                            if let (Some(sym_hex), Some(kind_hex), Some(type_hex), Some(sig_hex)) =
+                                (parts.next(), parts.next(), parts.next(), parts.next())
+                                && let (Some(sym), Some(kind), Some(detail), Some(sig)) = (
+                                    crate::r_session::decode_hex(sym_hex),
+                                    crate::r_session::decode_hex(kind_hex),
+                                    crate::r_session::decode_hex(type_hex),
+                                    crate::r_session::decode_hex(sig_hex),
+                                )
+                            {
                                 items.push(crate::r_editor::CompletionCandidate {
                                     name: sym,
                                     kind: if kind == "function" {
@@ -806,17 +811,18 @@ pub(crate) fn request_completion_metadata(
                                 });
                             }
                         }
-                    }
-                    let _ = tx.send(RMessage::CompletionMetadata {
-                        script_id,
-                        source_revision,
-                        object_columns: None,
-                        namespace_items: Some(((pkg, is_internal), items)),
-                    });
-                    if let Some(ctx) = ctx_repaint {
-                        ctx.request_repaint();
-                    }
-                }) {
+                        let _ = tx.send(RMessage::CompletionMetadata {
+                            script_id,
+                            source_revision,
+                            object_columns: None,
+                            namespace_items: Some(((pkg, is_internal), items)),
+                        });
+                        if let Some(ctx) = ctx_repaint {
+                            ctx.request_repaint();
+                        }
+                    })
+                    .is_err()
+                {
                     workspace.completion_request_in_flight = false;
                 }
             }
@@ -1477,10 +1483,14 @@ pub(crate) fn find_top_level_expressions(script: &str) -> Vec<(usize, usize)> {
             && last_code_token == ")"
             && delim_stack.is_empty();
 
-        if delim_stack.is_empty() && in_string.is_none() && !is_continuation_token && !next_continues && !control_clause_without_body {
-            if let Some(start) = current_start.take() {
-                expressions.push((start, line_idx));
-            }
+        if delim_stack.is_empty()
+            && in_string.is_none()
+            && !is_continuation_token
+            && !next_continues
+            && !control_clause_without_body
+            && let Some(start) = current_start.take()
+        {
+            expressions.push((start, line_idx));
         }
     }
 
