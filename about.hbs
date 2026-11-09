@@ -1,0 +1,21 @@
+# FigureIDE / VectorCraft Rust dependency licenses
+
+This file is generated from the dependency graph for the `vectorcraft` Windows x64
+application target (`x86_64-pc-windows-msvc`). It includes the license text selected
+for each dependency license expression and the crates that use it. The complete texts
+and notices for non-Rust bundled assets are provided in `asset-licenses/` and `licenses/`.
+
+{{#each licenses}}
+{{#if first_of_kind}}
+## {{name}}
+{{/if}}
+
+### {{name}}
+
+Used by:
+{{#each used_by}}
+- {{crate.name}} {{crate.version}}
+{{/each}}
+
+{{{text}}}
+{{/each}}

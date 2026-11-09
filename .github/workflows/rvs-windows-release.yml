@@ -1,5 +1,7 @@
 name: FigureIDE Windows Release
 
+# FigureIDE distribution changes based on VectorCraft; keep this workflow's package legal files in sync.
+
 on:
   push:
     tags:
@@ -27,6 +29,15 @@ jobs:
         shell: pwsh
         run: cargo build --locked --release -p vectorcraft
 
+      - name: Generate Windows dependency license notices
+        shell: pwsh
+        run: |
+          cargo install --locked --version 0.9.3 --features cli cargo-about
+          cargo about generate --manifest-path apps/vectorcraft/Cargo.toml --fail --locked --output-file target/THIRD-PARTY-LICENSES.md about.hbs
+          if (-not (Test-Path "target/THIRD-PARTY-LICENSES.md") -or (Get-Item "target/THIRD-PARTY-LICENSES.md").Length -lt 1000) {
+            throw "The Windows dependency license report was not generated."
+          }
+
       - name: Create Windows ZIP
         shell: pwsh
         run: |
@@ -51,10 +62,27 @@ jobs:
 
           Copy-Item "target/release/vectorcraft.exe" "$inner/FigureIDE.exe"
 
-          if (Test-Path "LICENSE-MIT") {
-            Copy-Item "LICENSE-MIT" "$inner/LICENSE.txt"
-          } elseif (Test-Path "LICENSE-APACHE") {
-            Copy-Item "LICENSE-APACHE" "$inner/LICENSE.txt"
+          foreach ($file in @("LICENSE-MIT", "LICENSE-APACHE", "NOTICE", "ASSETS.md", "target/THIRD-PARTY-LICENSES.md")) {
+            if (-not (Test-Path $file -PathType Leaf)) {
+              throw "Required license or attribution file is missing: $file"
+            }
+            $destinationName = if ($file -eq "target/THIRD-PARTY-LICENSES.md") { "THIRD-PARTY-LICENSES.md" } else { Split-Path $file -Leaf }
+            Copy-Item $file (Join-Path $inner $destinationName)
+          }
+
+          if (Test-Path "licenses") {
+            Copy-Item -Recurse "licenses" $inner
+          }
+
+          $assetLicenses = Get-ChildItem -Path "assets" -Recurse -File | Where-Object { $_.Name -match "^(LICENSE|OFL).*" }
+          if ($assetLicenses.Count -eq 0) {
+            throw "No bundled asset license texts were found."
+          }
+          foreach ($license in $assetLicenses) {
+            $relative = [IO.Path]::GetRelativePath((Resolve-Path "assets").Path, $license.FullName)
+            $destination = Join-Path (Join-Path $inner "asset-licenses") $relative
+            New-Item -ItemType Directory -Force (Split-Path $destination) | Out-Null
+            Copy-Item $license.FullName $destination
           }
 
           $commitSha = "${{ github.sha }}"
@@ -118,6 +146,13 @@ jobs:
                install.packages(c("ggplot2", "svglite", "systemfonts"), repos = "https://cloud.r-project.org")
           3. Restart FigureIDE and use the Environment panel or Packages tab to inspect packages.
 
+          License & Attribution:
+          ----------------------
+          FigureIDE is a modified derivative of the VectorCraft project. See LICENSE-MIT,
+          LICENSE-APACHE, and NOTICE for project terms and attribution. THIRD-PARTY-LICENSES.md
+          contains the Windows application dependency license texts; licenses/ and
+          asset-licenses/ contain notices for bundled PDF resources and artwork/fonts.
+
           Optional .fide File Association:
           --------------------------------
           This is a portable ZIP distribution. It does not touch your Windows registry
@@ -127,8 +162,8 @@ jobs:
 
           Issues & Releases:
           ------------------
-          GitHub Releases: https://github.com/newkor3185-blip/R_vector_studio/releases
-          GitHub Issues:   https://github.com/newkor3185-blip/R_vector_studio/issues
+          GitHub Releases: https://github.com/newkor3185-blip/FigureIDE/releases
+          GitHub Issues:   https://github.com/newkor3185-blip/FigureIDE/issues
           "@ | Set-Content "$inner/README.txt" -Encoding UTF8
 
           @"
@@ -185,6 +220,35 @@ jobs:
           if ($null -eq $readme) {
             Write-Error "README.txt missing from extracted archive!"
             exit 1
+          }
+
+          $packageRoot = Split-Path $exe.FullName -Parent
+          foreach ($required in @("LICENSE-MIT", "LICENSE-APACHE", "NOTICE", "ASSETS.md", "THIRD-PARTY-LICENSES.md")) {
+            $path = Join-Path $packageRoot $required
+            if (-not (Test-Path $path -PathType Leaf) -or (Get-Item $path).Length -eq 0) {
+              throw "Required legal notice missing or empty in ZIP: $required"
+            }
+          }
+          if (-not (Test-Path (Join-Path $packageRoot "licenses/pdf-backend/hayro-cmap/LICENSE.txt"))) {
+            throw "PDF backend license notices are missing from the ZIP."
+          }
+          foreach ($assetNotice in @(
+            "licenses/epaint-default-fonts/Hack-Regular.txt",
+            "licenses/epaint-default-fonts/Noto-Emoji-OFL.txt",
+            "licenses/epaint-default-fonts/Ubuntu-Font-License.txt",
+            "asset-licenses/icons/LICENSE-lucide.txt",
+            "asset-licenses/fonts/OFL-Inter.txt",
+            "asset-licenses/fonts/OFL-JetBrainsMono.txt",
+            "asset-licenses/fonts/OFL-SourceSans3.txt",
+            "asset-licenses/fonts/OFL-SourceSerif4.txt",
+            "asset-licenses/app-icon/LICENSE-figureide.txt"
+          )) {
+            if (-not (Test-Path (Join-Path $packageRoot $assetNotice) -PathType Leaf)) {
+              throw "License text for a bundled Windows asset/dependency is missing: $assetNotice"
+            }
+          }
+          if (-not (Get-ChildItem -Path (Join-Path $packageRoot "asset-licenses") -Recurse -File)) {
+            throw "Bundled asset license texts are missing from the ZIP."
           }
 
           # Verify standalone invocation (version / help)

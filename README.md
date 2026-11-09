@@ -1,5 +1,9 @@
 # FigureIDE
 
+<!-- This README is a modified derivative of the VectorCraft project documentation. -->
+
+> FigureIDE is an independently modified derivative of VectorCraft. See [License and attribution](#license-and-attribution).
+
 <p align="center"><img src="assets/app-icon/figureide-logo.png" alt="FigureIDE logo" width="360"></p>
 
 **FigureIDE** is a Windows-first scientific vector-figure editor built with Rust and egui. It combines an R coding workspace with editable vector artwork so researchers can compose, preserve and export publication figures.
@@ -110,7 +114,11 @@ Report bugs via [GitHub Issues](https://github.com/newkor3185-blip/FigureIDE/iss
 
 ## License and attribution
 
-FigureIDE builds on the VectorCraft codebase. The repository retains upstream copyright notices and third-party licenses. See [LICENSE-MIT](LICENSE-MIT), [LICENSE-APACHE](LICENSE-APACHE) and [NOTICE](NOTICE); some bundled artwork and brand assets have their own terms.
+FigureIDE is a modified derivative of the [VectorCraft project](https://github.com/storytold/vectorcraft), created by the ArtCraft team and VectorCraft contributors. VectorCraft copyright and attribution notices are retained. FigureIDE's source is offered under the MIT License or Apache License 2.0, at your option; see [LICENSE-MIT](LICENSE-MIT), [LICENSE-APACHE](LICENSE-APACHE), and [NOTICE](NOTICE). Third-party dependencies and bundled assets remain under their own licenses, listed in [ASSETS.md](ASSETS.md).
+
+The ArtCraft name and logos are trademarks and are not covered by the source license. FigureIDE is an independent modified project; its name, supplied FigureIDE artwork, and distribution do not imply that ArtCraft sponsors or endorses it. Windows portable ZIPs include both project licenses, attribution notices, the dependency license report, and the bundled asset license texts.
+
+Apache-2.0 Section 4(b) separately requires prominent notices in modified files when redistributing under that license; a top-level `NOTICE` does not replace that file-level condition. Preserve upstream copyright notices and check file-level change notices when modifying VectorCraft-derived source.
 
 ## Links
 
