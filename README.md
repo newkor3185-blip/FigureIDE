@@ -88,13 +88,24 @@ install.packages(c("ggplot2", "svglite"))
 
 Some workflows, such as the RNA-seq example below, require additional CRAN/Bioconductor packages.
 
-## Screenshots and visual references
+## FigureIDE screenshots
 
-The following are **upstream vector-editor reference images**, not screenshots of the latest FigureIDE R workspace. Current FigureIDE UI screenshots will be added after Windows release verification.
+These screenshots show FigureIDE running with an R analysis, editable vector artwork, and linked-plot controls.
 
-| Vector editing reference | Artwork reference |
-| --- | --- |
-| ![Upstream editor image](docs/images/shot-4-bezier.png) | ![Upstream vector composition](docs/images/shot-3-sheet.png) |
+<p align="center">
+  <img src="docs/images/figureide/figureIDE_workspace.png" alt="FigureIDE workspace with an R script, scientific figure canvas, and Plot Registry" width="1200">
+</p>
+
+<table>
+  <tr>
+    <td align="center"><img src="docs/images/figureide/figureIDE-R-script.png" alt="FigureIDE R script editor and Environment panel" width="600"></td>
+    <td align="center"><img src="docs/images/figureide/figureIDE-Graph-inspector.png" alt="FigureIDE linked plot with Graph Inspector controls" width="600"></td>
+  </tr>
+  <tr>
+    <td align="center"><em>Write and run R analysis scripts, then inspect workspace objects.</em></td>
+    <td align="center"><em>Inspect and adjust a selected R-linked plot in the vector editor.</em></td>
+  </tr>
+</table>
 
 For actual scientific output examples, see the [airway RNA-seq example](examples/airway/), including exported PCA, MA and volcano plots.
 
