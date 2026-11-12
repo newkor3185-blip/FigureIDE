@@ -6,9 +6,9 @@
 
 <p align="center"><img src="assets/app-icon/figureide-logo.png" alt="FigureIDE logo" width="360"></p>
 
-**FigureIDE** is a Windows-first scientific vector-figure editor built with Rust and egui. It combines an R coding workspace with editable vector artwork so researchers can compose, preserve and export publication figures.
+**FigureIDE** is a scientific vector-figure editor built with Rust and egui. It combines an R coding workspace with editable vector artwork so researchers can compose, preserve and export publication figures.
 
-> **Status:** Pre-release / beta candidate. Windows binaries and the complete R workflow must pass release checks before being considered validated.
+> **Status:** Pre-release / beta candidate. The native Linux x86_64 build and core R/figure workflow have been exercised on Ubuntu 26.04 under XFCE/XRDP with software rendering. Linux remains experimental: Wayland, hardware acceleration, and a complete native desktop-install path have not been validated. Windows binaries and the complete R workflow must pass release checks before being considered validated.
 
 ## Features
 
@@ -61,22 +61,68 @@ R and user-installed R packages are **not bundled** with the portable ZIP. Saved
 
 3. Restart FigureIDE after installing R or changing `PATH`. If R is unavailable, R-specific actions report that R must be installed; the editor and regular vector file operations remain available.
 
-## Build from source
+## Linux development build and portable package
 
-Requirements: Rust toolchain, Git and R for R-specific functionality.
+Linux x86_64 is experimental. The native release build, FigureIDE window, canvas, menus, toolbar,
+source editor, external R session, linked ggplot panel, `.fide` save/reopen, and SVG/PDF export were
+tested on Ubuntu 26.04 LTS in XFCE over XRDP. XRDP selected Mesa llvmpipe software rendering; this
+does not validate GPU acceleration. See [Linux validation and limitations](docs/figureide-linux.md)
+for the exact checks and outstanding items.
 
-```powershell
+The manually run [FigureIDE Linux workflow](.github/workflows/figureide-linux-release.yml) builds a
+portable archive as a GitHub Actions artifact. It does not publish a GitHub Release. To build locally
+on Ubuntu or a compatible x86_64 Linux system, install the compiler and native development headers:
+
+```sh
+sudo apt update
+sudo apt install build-essential pkg-config libxkbcommon-dev libxkbcommon-x11-0 libxcb-xkb1 \
+  libwayland-dev libx11-dev libxcb1-dev libxcursor-dev libxrandr-dev libxi-dev \
+  libfontconfig1-dev libfreetype-dev libgl1-mesa-dev
 git clone https://github.com/newkor3185-blip/FigureIDE.git
 cd FigureIDE
 cargo build --locked --release -p vectorcraft
-.\target\release\vectorcraft.exe
 ```
 
-The executable target and some internal crate names retain the upstream `vectorcraft` identifier for compatibility; distributed builds use the FigureIDE name.
+To create the portable archive after building and generating `target/THIRD-PARTY-LICENSES.md` with
+`cargo about`, run `packaging/figureide-linux/package.sh`. It writes
+`dist/FigureIDE-Linux-x86_64.tar.gz`. Extract the archive and run `./FigureIDE` from its directory.
+The archive includes project and dependency license notices. It does not bundle R or Linux system
+libraries.
 
-To check your R setup:
+The Linux desktop needs X11 or Wayland runtime libraries, Vulkan or OpenGL/Mesa, fontconfig, and
+FreeType. Debian/Ubuntu X11 runtime packages include `libx11-6`, `libxcb1`, `libxcb-xkb1`,
+`libxkbcommon0`, `libxkbcommon-x11-0`, `libxcursor1`, `libxrandr2`, and `libxi6`; Vulkan software
+rendering is available with `mesa-vulkan-drivers`. Desktop file picking uses an XDG Desktop Portal
+provider when available and may fall back to `zenity`.
 
-```powershell
+R remains an optional external dependency. Install R separately and ensure `Rscript` is on `PATH`.
+For the tested ggplot workflow, install packages in R:
+
+```r
+install.packages(c("ggplot2", "svglite", "systemfonts"), repos = "https://cloud.r-project.org")
+```
+
+Without R, vector editing, `.fide` saving/reopening, and ordinary SVG/PDF export remain available;
+R scripts and linked-plot refresh require R and the relevant R packages.
+
+## Build from source
+
+Requirements: Rust toolchain and Git. R is optional for R-specific functionality.
+
+```sh
+git clone https://github.com/newkor3185-blip/FigureIDE.git
+cd FigureIDE
+cargo build --locked --release -p vectorcraft
+```
+
+On Windows, run `target\release\vectorcraft.exe`. On Linux, run
+`target/release/vectorcraft` from a graphical desktop session. The executable target and some
+internal crate names retain the upstream `vectorcraft` identifier for compatibility; distributed
+builds use the FigureIDE name.
+
+Check R on Linux or Windows with:
+
+```sh
 Rscript --version
 ```
 
@@ -117,7 +163,7 @@ The original script produces output under `airway_analysis_results/` relative to
 
 ## Development and release verification
 
-The Windows packaging workflow is [FigureIDE Windows Release](.github/workflows/rvs-windows-release.yml). A passing YAML lint alone does **not** establish a successful Windows executable build, install experience or figure round trip.
+The Windows packaging workflow is [FigureIDE Windows Release](.github/workflows/rvs-windows-release.yml); Linux packaging is the manual [FigureIDE Linux workflow](.github/workflows/figureide-linux-release.yml). A passing YAML lint alone does **not** establish a successful executable build, install experience or figure round trip.
 
 Before publishing a beta, verify: project creation → script editing → figure save → optional R workspace save → app exit → project reopen → explicit workspace load → linked plot Reflow → SVG/PDF export.
 
