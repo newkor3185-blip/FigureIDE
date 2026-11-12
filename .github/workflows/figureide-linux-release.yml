@@ -1,0 +1,85 @@
+name: FigureIDE Linux Artifact
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  linux-x86_64:
+    name: Ubuntu Linux x86_64
+    runs-on: ubuntu-22.04
+    timeout-minutes: 90
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
+
+      - name: Install Linux and R dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential pkg-config \
+            libxkbcommon-dev libxkbcommon-x11-0 libxcb-xkb1 \
+            libwayland-dev libx11-dev libxcb1-dev libxcursor-dev libxrandr-dev libxi-dev \
+            libfontconfig1-dev libfreetype-dev libgl1-mesa-dev mesa-vulkan-drivers \
+            r-base r-cran-ggplot2 r-cran-svglite r-cran-systemfonts
+
+      - name: Check R plotting dependencies
+        run: Rscript -e 'stopifnot(requireNamespace("ggplot2", quietly = TRUE), requireNamespace("svglite", quietly = TRUE), requireNamespace("systemfonts", quietly = TRUE)); cat(R.version.string, "\n")'
+
+      - name: Format check
+        run: cargo fmt --all --check
+
+      - name: Cargo check
+        run: cargo check --locked -p vectorcraft
+
+      - name: Clippy
+        run: cargo clippy --locked -p vectorcraft --all-targets -- -D warnings
+
+      - name: FigureIDE package tests
+        run: cargo test --locked -p vectorcraft
+
+      - name: R workspace UI tests
+        run: cargo test --locked -p vectorcraft-ui-egui --lib r_workspace_
+
+      - name: Build Linux executable
+        run: cargo build --locked --release -p vectorcraft
+
+      - name: Generate third-party dependency notices
+        run: |
+          cargo install --locked --version 0.9.3 --features cli cargo-about
+          cargo about generate --manifest-path apps/vectorcraft/Cargo.toml --fail --locked \
+            --output-file target/THIRD-PARTY-LICENSES.md about.hbs
+          test -s target/THIRD-PARTY-LICENSES.md
+
+      - name: Package portable archive
+        run: packaging/figureide-linux/package.sh
+
+      - name: Verify package contents and executable
+        run: |
+          mkdir -p target/linux-package-check
+          tar -xzf dist/FigureIDE-Linux-x86_64.tar.gz -C target/linux-package-check
+          package=target/linux-package-check/FigureIDE-Linux-x86_64
+          test -x "$package/FigureIDE"
+          test -s "$package/LICENSE-MIT"
+          test -s "$package/LICENSE-APACHE"
+          test -s "$package/NOTICE"
+          test -s "$package/ASSETS.md"
+          test -s "$package/THIRD-PARTY-LICENSES.md"
+          test -s "$package/licenses/pdf-backend/hayro-cmap/LICENSE.txt"
+          test -s "$package/asset-licenses/app-icon/LICENSE-figureide.txt"
+          "$package/FigureIDE" --version
+          sha256sum dist/FigureIDE-Linux-x86_64.tar.gz
+
+      - name: Upload Linux archive
+        uses: actions/upload-artifact@v4
+        with:
+          name: FigureIDE-Linux-x86_64
+          path: dist/FigureIDE-Linux-x86_64.tar.gz
+          if-no-files-found: error

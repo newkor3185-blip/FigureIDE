@@ -679,8 +679,8 @@ fn open_file(path: &str) -> Result<(), String> {
 }
 
 /// The window, Dock, taskbar and app-switcher icon (`assets/app-icon/`, see its README). macOS gets
-/// the version with Apple's transparent margin; elsewhere the full-bleed tile. The app ID matches
-/// `packaging/linux/ai.storyteller.vectorcraft.desktop` so Wayland docks find the launcher icon.
+/// the version with Apple's transparent margin; Windows and Linux use FigureIDE's full-bleed tile.
+/// The app ID matches `packaging/linux/ai.storyteller.vectorcraft.desktop` for dock integration.
 fn app_icon() -> egui::IconData {
     #[cfg(windows)]
     {
@@ -689,7 +689,9 @@ fn app_icon() -> egui::IconData {
     }
     #[cfg(target_os = "macos")]
     let png: &[u8] = include_bytes!("../../../assets/app-icon/vectorcraft-macos-512.png");
-    #[cfg(all(not(windows), not(target_os = "macos")))]
+    #[cfg(target_os = "linux")]
+    let png: &[u8] = include_bytes!("../../../assets/app-icon/figureide-desktop-icon.png");
+    #[cfg(all(not(windows), not(target_os = "macos"), not(target_os = "linux")))]
     let png: &[u8] = include_bytes!("../../../assets/app-icon/hicolor/256x256/apps/ai.storyteller.vectorcraft.png");
     #[cfg(not(windows))]
     eframe::icon_data::from_png_bytes(png).unwrap_or_default()
@@ -855,7 +857,7 @@ fn main() -> std::process::ExitCode {
         match a.as_str() {
             "--in-window-menus" => in_window_menus = true,
             "--version" => {
-                println!("vectorcraft {}", env!("CARGO_PKG_VERSION"));
+                println!("FigureIDE {}", env!("CARGO_PKG_VERSION"));
                 return std::process::ExitCode::SUCCESS;
             }
             // Before anything starts, like `--version`: from a terminal or an agent's shell the app

@@ -64,7 +64,7 @@ fn repeated_roots_are_accepted_for_both_spellings() {
     for flag in ["--automation-read-root", "--automation-write-root"] {
         let out = Command::new(BIN).args([flag, ".", format!("{flag}=.").as_str(), flag, "./", "--version"]).output().unwrap();
         assert!(out.status.success(), "{flag}: {}", String::from_utf8_lossy(&out.stderr));
-        assert_eq!(String::from_utf8(out.stdout).unwrap(), format!("vectorcraft {}\n", env!("CARGO_PKG_VERSION")));
+        assert_eq!(String::from_utf8(out.stdout).unwrap(), format!("FigureIDE {}\n", env!("CARGO_PKG_VERSION")));
         assert!(out.stderr.is_empty());
         rejects(&[flag, ".", flag, ""], &format!("{flag} needs a non-empty folder"));
         rejects(&[&format!("{flag}=."), flag], &format!("{flag} needs a folder"));
@@ -75,7 +75,7 @@ fn repeated_roots_are_accepted_for_both_spellings() {
 fn explicit_dash_folder_does_not_consume_version() {
     let out = Command::new(BIN).args(["--automation-read-root=-folder", "--automation-write-root", "./-folder", "--version"]).output().unwrap();
     assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
-    assert_eq!(String::from_utf8(out.stdout).unwrap(), format!("vectorcraft {}\n", env!("CARGO_PKG_VERSION")));
+    assert_eq!(String::from_utf8(out.stdout).unwrap(), format!("FigureIDE {}\n", env!("CARGO_PKG_VERSION")));
     assert!(out.stderr.is_empty());
 }
 
@@ -97,5 +97,5 @@ fn control_without_a_valid_port_fails_before_startup() {
 fn version_wins_over_a_bad_control_port_variable() {
     let out = Command::new(BIN).arg("--version").env("VECTORCRAFT_CONTROL_PORT", "abc").output().unwrap();
     assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
-    assert_eq!(String::from_utf8(out.stdout).unwrap(), format!("vectorcraft {}\n", env!("CARGO_PKG_VERSION")));
+    assert_eq!(String::from_utf8(out.stdout).unwrap(), format!("FigureIDE {}\n", env!("CARGO_PKG_VERSION")));
 }
