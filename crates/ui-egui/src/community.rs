@@ -53,14 +53,14 @@ mod tests {
         assert_eq!(
             *opened.lock().unwrap(),
             [
-                "https://github.com/newkor3185-blip/R_vector_studio",
-                "https://github.com/newkor3185-blip/R_vector_studio/releases",
-                "https://github.com/newkor3185-blip/R_vector_studio/issues"
+                "https://github.com/newkor3185-blip/FigureIDE",
+                "https://github.com/newkor3185-blip/FigureIDE/releases",
+                "https://github.com/newkor3185-blip/FigureIDE/issues"
             ]
         );
         // The control channel / MCP path returns the URL without opening a browser.
         let v = app.run("help.github", serde_json::json!({})).unwrap();
-        assert_eq!(v["url"], "https://github.com/newkor3185-blip/R_vector_studio");
+        assert_eq!(v["url"], "https://github.com/newkor3185-blip/FigureIDE");
         assert_eq!(opened.lock().unwrap().len(), 3);
         let ctx = egui::Context::default();
         crate::theme::install_fonts(&ctx);

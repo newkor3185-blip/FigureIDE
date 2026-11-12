@@ -33,9 +33,9 @@
 
     <Icon Id="VectorcraftIcon.ico" SourceFile="$(var.IconPath)" />
     <Property Id="ARPPRODUCTICON" Value="VectorcraftIcon.ico" />
-    <Property Id="ARPURLINFOABOUT" Value="https://github.com/newkor3185-blip/R_vector_studio" />
-    <Property Id="ARPURLUPDATEINFO" Value="https://github.com/newkor3185-blip/R_vector_studio/releases" />
-    <Property Id="ARPHELPLINK" Value="https://github.com/newkor3185-blip/R_vector_studio/issues" />
+    <Property Id="ARPURLINFOABOUT" Value="https://github.com/newkor3185-blip/FigureIDE" />
+    <Property Id="ARPURLUPDATEINFO" Value="https://github.com/newkor3185-blip/FigureIDE/releases" />
+    <Property Id="ARPHELPLINK" Value="https://github.com/newkor3185-blip/FigureIDE/issues" />
 
     <StandardDirectory Id="ProgramFiles6432Folder">
       <Directory Id="INSTALLFOLDER" Name="VectorCraft" />

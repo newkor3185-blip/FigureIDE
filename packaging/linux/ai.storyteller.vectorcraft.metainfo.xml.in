@@ -20,10 +20,10 @@
   <launchable type="desktop-id">ai.storyteller.vectorcraft.desktop</launchable>
   <icon type="stock">ai.storyteller.vectorcraft</icon>
   <!-- Only url types known to appstream 0.15 (Ubuntu 22.04, where CI validates): no vcs-browser. -->
-  <url type="homepage">https://github.com/newkor3185-blip/R_vector_studio</url>
-  <url type="bugtracker">https://github.com/newkor3185-blip/R_vector_studio/issues</url>
-  <url type="help">https://github.com/newkor3185-blip/R_vector_studio</url>
-  <url type="contact">https://github.com/newkor3185-blip/R_vector_studio/issues</url>
+  <url type="homepage">https://github.com/newkor3185-blip/FigureIDE</url>
+  <url type="bugtracker">https://github.com/newkor3185-blip/FigureIDE/issues</url>
+  <url type="help">https://github.com/newkor3185-blip/FigureIDE</url>
+  <url type="contact">https://github.com/newkor3185-blip/FigureIDE/issues</url>
   <categories>
     <category>Graphics</category>
     <category>2DGraphics</category>

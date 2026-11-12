@@ -14,7 +14,7 @@ section: graphics
 priority: optional
 maintainer: ${VECTORCRAFT_MAINTAINER}
 vendor: Learning Machines LLC
-homepage: https://github.com/newkor3185-blip/R_vector_studio
+homepage: https://github.com/newkor3185-blip/FigureIDE
 license: MIT OR Apache-2.0
 description: |-
   Open-source, native vector illustration app.

@@ -55,7 +55,7 @@ if (-not $haveCert -and -not $haveAzure) {
 }
 
 $script:SignTool = Find-SignTool
-$common = @('sign', '/v', '/fd', 'SHA256', '/td', 'SHA256', '/d', 'FigureIDE', '/du', 'https://github.com/newkor3185-blip/R_vector_studio')
+$common = @('sign', '/v', '/fd', 'SHA256', '/td', 'SHA256', '/d', 'FigureIDE', '/du', 'https://github.com/newkor3185-blip/FigureIDE')
 $tmp = Join-Path ([IO.Path]::GetTempPath()) "vectorcraft-sign-$([IO.Path]::GetRandomFileName())"
 New-Item -ItemType Directory -Path $tmp | Out-Null
 

@@ -8,7 +8,7 @@ version = "0.17.0"
 edition = "2024"
 license = "MIT OR Apache-2.0"
 rust-version = "1.95"
-repository = "https://github.com/newkor3185-blip/R_vector_studio"
+repository = "https://github.com/newkor3185-blip/FigureIDE"
 
 [workspace.dependencies]
 craft-pdf = { git = "https://github.com/storytold/craft-libs", rev = "a0916808f7d78bed8c7b90cdf937176015454a7f", default-features = false, features = ["interpret", "write"] }
