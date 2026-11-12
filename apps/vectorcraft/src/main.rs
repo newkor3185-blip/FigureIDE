@@ -679,8 +679,7 @@ fn open_file(path: &str) -> Result<(), String> {
 }
 
 /// The window, Dock, taskbar and app-switcher icon (`assets/app-icon/`, see its README). macOS gets
-/// the version with Apple's transparent margin; Windows and Linux use FigureIDE's full-bleed tile.
-/// The app ID matches `packaging/linux/ai.storyteller.vectorcraft.desktop` for dock integration.
+/// the supplied FigureIDE icon; Windows and Linux use its desktop tile. The app ID matches `packaging/linux/ai.storyteller.vectorcraft.desktop` for dock integration.
 fn app_icon() -> egui::IconData {
     #[cfg(windows)]
     {
@@ -688,7 +687,7 @@ fn app_icon() -> egui::IconData {
         eframe::icon_data::from_png_bytes(png).unwrap_or_default()
     }
     #[cfg(target_os = "macos")]
-    let png: &[u8] = include_bytes!("../../../assets/app-icon/vectorcraft-macos-512.png");
+    let png: &[u8] = include_bytes!("../../../assets/app-icon/figureide-app-icon.png");
     #[cfg(target_os = "linux")]
     let png: &[u8] = include_bytes!("../../../assets/app-icon/figureide-desktop-icon.png");
     #[cfg(all(not(windows), not(target_os = "macos"), not(target_os = "linux")))]

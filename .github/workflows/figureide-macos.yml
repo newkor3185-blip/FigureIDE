@@ -1,0 +1,116 @@
+name: FigureIDE macOS Build
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/figureide-macos.yml'
+      - 'apps/vectorcraft/**'
+      - 'crates/**'
+      - 'assets/**'
+      - '.cargo/**'
+      - 'packaging/figureide-macos/**'
+      - 'packaging/env.sh'
+      - 'packaging/macos/Info.plist.in'
+      - 'Cargo.toml'
+      - 'Cargo.lock'
+      - 'README.md'
+      - 'licenses/**'
+      - 'LICENSE-MIT'
+      - 'LICENSE-APACHE'
+      - 'NOTICE'
+      - 'ASSETS.md'
+      - 'about.hbs'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: ${{ matrix.name }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: Apple Silicon (arm64)
+            runner: macos-15
+            target: aarch64-apple-darwin
+            architecture: arm64
+            artifact: AppleSilicon
+            package_arch: apple-silicon
+          - name: Intel (x86_64)
+            runner: macos-15-intel
+            target: x86_64-apple-darwin
+            architecture: x86_64
+            artifact: Intel
+            package_arch: intel
+    env:
+      MACOSX_DEPLOYMENT_TARGET: '11.0'
+      CRAFT_FONTS_DIR: ${{ github.workspace }}/craft-fonts
+      CRAFT_FONTS_REQUIRED: '1'
+      R_LIBS_USER: ${{ runner.temp }}/R-library
+    steps:
+      - name: Check out FigureIDE
+        uses: actions/checkout@v4
+
+      - name: Check out pinned craft-fonts
+        uses: actions/checkout@v4
+        with:
+          repository: storytold/craft-fonts
+          ref: b076417b5880bd4154bd22f00695b1d28c6bea83
+          path: craft-fonts
+
+      - name: Verify native runner architecture
+        run: test "$(uname -m)" = '${{ matrix.architecture }}'
+
+      - name: Install Rust and target
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+          components: clippy, rustfmt
+
+      - name: Install R and plotting packages
+        run: |
+          brew list --versions r >/dev/null 2>&1 || brew install --quiet r
+          mkdir -p "$R_LIBS_USER"
+          Rscript -e 'install.packages(c("ggplot2", "svglite", "systemfonts"), lib=Sys.getenv("R_LIBS_USER"), repos="https://cloud.r-project.org")'
+          R_LIBS_USER="$R_LIBS_USER" Rscript -e 'stopifnot(requireNamespace("ggplot2", quietly=TRUE), requireNamespace("svglite", quietly=TRUE), requireNamespace("systemfonts", quietly=TRUE)); cat(R.version.string, "\n")'
+
+      - name: Check formatting
+        run: cargo fmt --all --check
+
+      - name: Cargo check
+        run: cargo check --locked -p vectorcraft --target ${{ matrix.target }}
+
+      - name: Clippy
+        run: cargo clippy --locked -p vectorcraft --target ${{ matrix.target }} --all-targets -- -D warnings
+
+      - name: FigureIDE app tests
+        run: cargo test --locked -p vectorcraft --target ${{ matrix.target }}
+
+      - name: R and ggplot2 FigureIDE integration test
+        run: cargo test --locked -p vectorcraft-ui-egui --lib --target ${{ matrix.target }} ggplot_objects_are_discovered_and_rendered_as_vector_svg
+
+      - name: Build FigureIDE
+        run: cargo build --locked --release -p vectorcraft --target ${{ matrix.target }}
+
+      - name: Generate third-party dependency notices
+        run: |
+          cargo install --locked --version 0.9.3 --features cli cargo-about
+          cargo about generate --manifest-path apps/vectorcraft/Cargo.toml --fail --locked \
+            --output-file target/THIRD-PARTY-LICENSES.md about.hbs
+          test -s target/THIRD-PARTY-LICENSES.md
+
+      - name: Assemble and validate FigureIDE.app
+        run: DIST=dist packaging/figureide-macos/package.sh ${{ matrix.package_arch }}
+
+      - name: Upload macOS ZIP
+        uses: actions/upload-artifact@v4
+        with:
+          name: FigureIDE-macOS-${{ matrix.artifact }}
+          path: dist/FigureIDE-macOS-${{ matrix.artifact }}.zip
+          if-no-files-found: error
+          retention-days: 14
