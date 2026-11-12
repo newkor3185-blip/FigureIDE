@@ -5,9 +5,9 @@ use serde_json::{Value, json};
 
 use super::*;
 
-pub const GITHUB_URL: &str = "https://github.com/newkor3185-blip/R_vector_studio";
-pub const RELEASES_URL: &str = "https://github.com/newkor3185-blip/R_vector_studio/releases";
-pub const ISSUES_URL: &str = "https://github.com/newkor3185-blip/R_vector_studio/issues";
+pub const GITHUB_URL: &str = "https://github.com/newkor3185-blip/FigureIDE";
+pub const RELEASES_URL: &str = "https://github.com/newkor3185-blip/FigureIDE/releases";
+pub const ISSUES_URL: &str = "https://github.com/newkor3185-blip/FigureIDE/issues";
 
 pub fn github_url() -> String {
     GITHUB_URL.to_string()
