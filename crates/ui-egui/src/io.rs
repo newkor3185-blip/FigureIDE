@@ -2,7 +2,9 @@
 //! `fileio` decodes, encodes and saves every format.
 
 use serde_json::{Value, json};
-use std::path::{Path, PathBuf};
+use std::path::Path;
+#[cfg(not(target_arch = "wasm32"))]
+use std::path::PathBuf;
 use vectorcraft_doc::SavedView;
 use vectorcraft_doc::cancel;
 use vectorcraft_engine::EngineError;
@@ -279,9 +281,16 @@ fn document_index_for_path(app: &VectorcraftApp, path: &str) -> Option<usize> {
 }
 
 fn same_open_path(a: &str, b: &str) -> bool {
-    match (std::fs::canonicalize(a), std::fs::canonicalize(b)) {
-        (Ok(a), Ok(b)) => a == b,
-        _ => a == b,
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        match (std::fs::canonicalize(a), std::fs::canonicalize(b)) {
+            (Ok(a), Ok(b)) => a == b,
+            _ => a == b,
+        }
+    }
+    #[cfg(target_arch = "wasm32")]
+    {
+        a == b
     }
 }
 
@@ -322,6 +331,9 @@ pub(crate) fn rename_document(app: &mut VectorcraftApp, uid: u64, requested: &st
         if app.session.documents().iter().any(|other| other.uid != uid && other.path.as_deref().is_some_and(|path| same_open_path(path, &new_s))) {
             return Err(format!("another open document already uses {filename}"));
         }
+    }
+    #[cfg(not(target_arch = "wasm32"))]
+    if let (Some(old), Some(new)) = (old_path.as_deref(), new_path.as_deref()) {
         let metadata = std::fs::symlink_metadata(old).map_err(|e| format!("could not inspect the current file: {e}"))?;
         if !metadata.is_file() || metadata.file_type().is_symlink() {
             return Err("the saved document is not a regular file".into());
@@ -364,6 +376,16 @@ pub(crate) fn rename_document(app: &mut VectorcraftApp, uid: u64, requested: &st
             }
         }
     }
+    #[cfg(target_arch = "wasm32")]
+    if let (Some(old), Some(new)) = (old_path.as_deref(), new_path.as_deref()) {
+        let old = old.to_string();
+        let new = new.to_string_lossy();
+        for recent in &mut app.ui.recent_files {
+            if recent == &old {
+                *recent = new.to_string();
+            }
+        }
+    }
     let st = app.session.document_mut(uid).ok_or("that document is no longer open")?;
     std::sync::Arc::make_mut(&mut st.doc).title = stem.clone();
     st.path = new_path.as_ref().map(|p| p.to_string_lossy().into_owned());
@@ -378,12 +400,14 @@ pub(crate) fn rename_document(app: &mut VectorcraftApp, uid: u64, requested: &st
 /// Prepare the minimal project.json change for a saved figure in a folder project. Writing this
 /// after creating the destination link but before removing the old name keeps at least one
 /// referenced file available if the process or machine stops midway through the rename.
+#[cfg(not(target_arch = "wasm32"))]
 struct ProjectMetadataRename {
     path: PathBuf,
     original: Vec<u8>,
     updated: Vec<u8>,
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 fn project_figure_metadata_update(app: &VectorcraftApp, old: &str, new: &Path, name: &str) -> Result<Option<ProjectMetadataRename>, String> {
     if !app.scientific.enabled {
         return Ok(None);
