@@ -1304,14 +1304,22 @@ mod tests {
     #[test]
     fn renaming_an_unsaved_document_updates_only_its_suggested_name() {
         let (mut app, _) = app();
+        let picked_names = Rc::new(RefCell::new(Vec::new()));
+        let names = picked_names.clone();
+        app.services.pick_save = Some(Box::new(move |pick| {
+            names.borrow_mut().push(pick.name.clone());
+            None
+        }));
+        app.scientific.enabled = true;
         app.run("file.new", json!({"width": 100, "height": 80})).unwrap();
         let uid = app.session.active().unwrap().uid;
         assert_eq!(rename_document(&mut app, uid, "RNAseq_Figure_01.fide").unwrap(), None);
         let st = app.session.active().unwrap();
         assert_eq!(st.doc.title, "RNAseq_Figure_01");
         assert!(st.path.is_none(), "renaming an unsaved document must not create a file");
-        let plan = fileio::save_plan(&app.session, SaveMode::Save, &json!({})).unwrap();
-        assert_eq!(plan.name, "RNAseq_Figure_01.fide");
+        app.run("figure.saveAs", json!({})).unwrap();
+        assert_eq!(picked_names.borrow().as_slice(), ["RNAseq_Figure_01.fide"]);
+        assert!(app.session.active().unwrap().path.is_none(), "canceling the save picker must not create a file");
     }
 
     #[test]

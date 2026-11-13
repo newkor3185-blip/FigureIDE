@@ -712,11 +712,13 @@ pub(crate) fn save_figure_as_command(app: &mut VectorcraftApp, p: &Value) -> Res
     let default_name = app
         .session
         .active()
-        .and_then(|d| d.path.as_ref())
-        .and_then(|p| Path::new(p).file_name())
-        .and_then(|n| n.to_str())
-        .unwrap_or("Figure.fide")
-        .to_string();
+        .map(|d| {
+            d.path.as_deref().and_then(|p| Path::new(p).file_name()).and_then(|n| n.to_str()).map(str::to_owned).unwrap_or_else(|| {
+                let stem = Path::new(&d.doc.title).file_stem().and_then(|n| n.to_str()).unwrap_or(&d.doc.title);
+                format!("{stem}.{FIDE_EXTENSION}")
+            })
+        })
+        .unwrap_or_else(|| format!("Figure.{FIDE_EXTENSION}"));
 
     let pick = crate::FilePick {
         name: default_name,
