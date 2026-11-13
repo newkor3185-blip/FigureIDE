@@ -8,7 +8,15 @@
 
 **FigureIDE** is a scientific vector-figure editor built with Rust and egui. It combines an R coding workspace with editable vector artwork so researchers can compose, preserve and export publication figures.
 
-> **Status:** Pre-release / beta candidate. Linux x86_64 is experimental and has been exercised on Ubuntu 26.04 under XFCE/XRDP with software rendering; Wayland and hardware acceleration remain unverified. Native macOS Apple Silicon and Intel support is experimental and being validated through GitHub Actions. The macOS app is ad-hoc signed, not notarized, and awaits physical Mac GUI testing. Windows binaries and the complete R workflow remain subject to release checks.
+## Demo
+
+Watch FigureIDE in action — from R/ggplot2 visualization to scientific figure editing and export.
+
+[![FigureIDE Demo Video](https://img.youtube.com/vi/ay1fmnCTgsg/maxresdefault.jpg)](https://youtu.be/ay1fmnCTgsg)
+
+**[Watch the FigureIDE demo on YouTube](https://youtu.be/ay1fmnCTgsg)**
+
+> **Status:** Pre-release / beta candidate. The native Linux x86_64 build and core R/figure workflow have been exercised on Ubuntu 26.04 under XFCE/XRDP with software rendering. Linux remains experimental: Wayland, hardware acceleration, and a complete native desktop-install path have not been validated. Windows binaries and the complete R workflow must pass release checks before being considered validated.
 
 ## Features
 
