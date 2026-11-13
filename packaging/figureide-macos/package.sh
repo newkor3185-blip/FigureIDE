@@ -67,7 +67,9 @@ install -m 644 "$LICENSE_REPORT" "$RESOURCES/THIRD-PARTY-LICENSES.md"
 copy_docs "$RESOURCES"
 while IFS= read -r -d '' license; do
   relative="${license#"$ROOT/assets/"}"
-  install -D -m 644 "$license" "$RESOURCES/asset-licenses/$relative"
+  destination="$RESOURCES/asset-licenses/$relative"
+  mkdir -p "$(dirname "$destination")"
+  install -m 644 "$license" "$destination"
 done < <(find "$ROOT/assets" -type f \( -name 'LICENSE*' -o -name 'OFL*' \) -print0)
 printf 'APPL????' >"$APP/Contents/PkgInfo"
 
