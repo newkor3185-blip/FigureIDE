@@ -1593,19 +1593,51 @@ mod tests {
             return;
         }
         let result = session
-            .execute("phase3_plot <- ggplot2::ggplot(data.frame(x=1:3, y=1:3), ggplot2::aes(x, y)) + ggplot2::geom_point()")
+            .execute("iris_figure <- ggplot2::ggplot(iris, ggplot2::aes(Sepal.Length, Petal.Length, color=Species)) + ggplot2::geom_point(size=3) + ggplot2::theme_classic() + ggplot2::labs(title='Iris Measurements', x='Sepal length', y='Petal length')")
             .unwrap_or_else(|error| panic!("R execution failed: {error}"));
         assert!(result.error.is_none(), "{:?}", result.error);
-        assert!(result.objects.iter().any(|plot| plot.variable == "phase3_plot" && plot.classes.contains(&"ggplot".to_owned())));
-        let (svg, plots) = session.render_plot_svg("phase3_plot").unwrap_or_else(|error| panic!("SVG render failed: {error}"));
+        assert!(result.objects.iter().any(|plot| plot.variable == "iris_figure" && plot.classes.contains(&"ggplot".to_owned())));
+        let (svg, plots) = session.render_plot_svg("iris_figure").unwrap_or_else(|error| panic!("SVG render failed: {error}"));
         assert!(svg.contains("<svg"));
-        assert!(plots.iter().any(|plot| plot.variable == "phase3_plot"));
-        let mut document = vectorcraft_engine::Session::new();
-        document.execute("file.new", &serde_json::json!({"width": 400, "height": 300})).unwrap();
-        let imported = document.execute("clipboard.importSvg", &serde_json::json!({"svg": svg})).unwrap();
+        assert!(svg.contains("Iris Measurements"));
+        assert!(svg.contains("Sepal length"));
+        assert!(svg.contains("Petal length"));
+        assert!(plots.iter().any(|plot| plot.variable == "iris_figure"));
+        let mut app = crate::VectorcraftApp::new(vectorcraft_engine::Session::new(), Default::default());
+        app.session.execute("file.new", &serde_json::json!({"width": 400, "height": 300})).unwrap();
+        let imported = app.session.execute("clipboard.importSvg", &serde_json::json!({"svg": svg})).unwrap();
         assert!(imported["count"].as_u64().is_some_and(|count| count > 0));
-        let pasted = document.execute("edit.pasteInPlace", &serde_json::json!({})).unwrap();
+        let pasted = app.session.execute("edit.pasteInPlace", &serde_json::json!({})).unwrap();
         assert!(pasted["ids"].as_array().is_some_and(|ids| !ids.is_empty()));
+
+        let project_dir = std::env::temp_dir().join(format!("figureide-iris-project-{}", std::process::id()));
+        if project_dir.exists() {
+            std::fs::remove_dir_all(&project_dir).unwrap();
+        }
+        crate::scientific::project::save_project_to_path(&mut app, &project_dir.to_string_lossy(), None).unwrap();
+        assert!(project_dir.join("project.json").is_file());
+
+        let mut reopened = crate::VectorcraftApp::new(vectorcraft_engine::Session::new(), Default::default());
+        crate::scientific::project::open_project_from_path(&mut reopened, &project_dir.to_string_lossy()).unwrap();
+        let inspected = reopened.session.execute("document.inspect", &serde_json::json!({})).unwrap().to_string();
+        assert!(inspected.contains("Iris Measurements"), "{inspected}");
+        assert!(inspected.contains("Sepal length"), "{inspected}");
+        assert!(inspected.contains("Petal length"), "{inspected}");
+        for format in ["svg", "pdf"] {
+            let exported = reopened.session.execute("document.export", &serde_json::json!({"format": format})).unwrap();
+            let data = vectorcraft_format::base64_decode(exported["dataBase64"].as_str().unwrap()).unwrap();
+            assert!(data.len() > 100, "{format} export was unexpectedly small");
+            if format == "pdf" {
+                assert!(data.starts_with(b"%PDF-"), "PDF export has an invalid header");
+            } else {
+                let text = String::from_utf8(data).unwrap();
+                assert!(text.contains("<svg"));
+                assert!(text.contains("Iris Measurements"));
+                assert!(text.contains("Sepal length"));
+                assert!(text.contains("Petal length"));
+            }
+        }
+        std::fs::remove_dir_all(&project_dir).unwrap();
         assert!(session.stop().is_ok());
     }
 

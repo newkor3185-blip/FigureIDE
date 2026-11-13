@@ -69,6 +69,57 @@ R and user-installed R packages are **not bundled** with the portable ZIP. Saved
 
 3. Restart FigureIDE after installing R or changing `PATH`. If R is unavailable, R-specific actions report that R must be installed; the editor and regular vector file operations remain available.
 
+## Install (macOS)
+
+The [FigureIDE macOS workflow](.github/workflows/figureide-macos.yml) builds separate Apple Silicon
+and Intel `.app` bundles on native GitHub-hosted runners. Pull request runs and manual runs upload
+`FigureIDE-macOS-AppleSilicon.zip` and `FigureIDE-macOS-Intel.zip` as Actions artifacts. These are
+development artifacts, not GitHub Releases.
+
+Download the ZIP for your Mac from the workflow run's Artifacts section, unzip it, and move
+`FigureIDE.app` to Applications. R is optional for vector editing, `.fide` files, and normal SVG/PDF
+export. To run R scripts or refresh linked plots, install R from [CRAN](https://cran.r-project.org/bin/macosx/)
+or Homebrew (`brew install r`), then install packages from R:
+
+```r
+install.packages(c("ggplot2", "svglite", "systemfonts"), repos = "https://cloud.r-project.org")
+```
+
+FigureIDE checks `Rscript` on `PATH`, under `R_HOME`, and in common CRAN framework and Homebrew
+locations. R and its packages are not bundled. The workflow runs R-backed ggplot integration tests
+on both CPU architectures.
+
+**Gatekeeper limitation:** these ZIPs are ad-hoc signed for bundle integrity. They do not have a
+Developer ID signature and are not notarized. macOS may prevent them from opening; this is not a
+notarized end-user release. See [Apple's instructions for apps that are not notarized](https://support.apple.com/en-us/102445).
+Use the artifact only if you trust its source and understand this limitation.
+
+The workflow validates the app bundle and runs automated tests, but those checks do not replace
+manual interaction testing on physical Apple Silicon and Intel Macs. Window appearance, menus,
+dialogs, clipboard exchange, and file opening from Finder still need manual verification.
+See the [macOS build notes](docs/figureide-macos.md) for the exact validation scope and remaining
+manual checks.
+
+### Build and package on macOS
+
+Install Rust and build the target matching the machine. Then create its `.app` bundle and ZIP:
+
+```sh
+# Apple Silicon
+rustup target add aarch64-apple-darwin
+cargo build --locked --release -p vectorcraft --target aarch64-apple-darwin
+DIST=dist packaging/figureide-macos/package.sh apple-silicon
+
+# Intel
+rustup target add x86_64-apple-darwin
+cargo build --locked --release -p vectorcraft --target x86_64-apple-darwin
+DIST=dist packaging/figureide-macos/package.sh intel
+```
+
+The package includes project, asset, embedded-font, and dependency license notices. Existing native
+macOS AppKit menu, dialog, clipboard, window, and CoreText font implementations are used.
+
+
 ## Linux development build and portable package
 
 Linux x86_64 is experimental. The native release build, FigureIDE window, canvas, menus, toolbar,
@@ -171,7 +222,7 @@ The original script produces output under `airway_analysis_results/` relative to
 
 ## Development and release verification
 
-The Windows packaging workflow is [FigureIDE Windows Release](.github/workflows/rvs-windows-release.yml); Linux packaging is the manual [FigureIDE Linux workflow](.github/workflows/figureide-linux-release.yml). A passing YAML lint alone does **not** establish a successful executable build, install experience or figure round trip.
+The Windows packaging workflow is [FigureIDE Windows Release](.github/workflows/rvs-windows-release.yml); Linux packaging is the manual [FigureIDE Linux workflow](.github/workflows/figureide-linux-release.yml), and macOS builds use [FigureIDE macOS Build](.github/workflows/figureide-macos.yml). A passing YAML lint alone does **not** establish a successful executable build, install experience or figure round trip.
 
 Before publishing a beta, verify: project creation → script editing → figure save → optional R workspace save → app exit → project reopen → explicit workspace load → linked plot Reflow → SVG/PDF export.
 
@@ -181,7 +232,7 @@ Report bugs via [GitHub Issues](https://github.com/newkor3185-blip/FigureIDE/iss
 
 FigureIDE is a modified derivative of the [VectorCraft project](https://github.com/storytold/vectorcraft), created by the ArtCraft team and VectorCraft contributors. VectorCraft copyright and attribution notices are retained. FigureIDE's source is offered under the MIT License or Apache License 2.0, at your option; see [LICENSE-MIT](LICENSE-MIT), [LICENSE-APACHE](LICENSE-APACHE), and [NOTICE](NOTICE). Third-party dependencies and bundled assets remain under their own licenses, listed in [ASSETS.md](ASSETS.md).
 
-The ArtCraft name and logos are trademarks and are not covered by the source license. FigureIDE is an independent modified project; its name, supplied FigureIDE artwork, and distribution do not imply that ArtCraft sponsors or endorses it. Windows portable ZIPs include both project licenses, attribution notices, the dependency license report, and the bundled asset license texts.
+The ArtCraft name and logos are trademarks and are not covered by the source license. FigureIDE is an independent modified project; its name, supplied FigureIDE artwork, and distribution do not imply that ArtCraft sponsors or endorses it. Windows portable ZIPs and macOS app artifacts include both project licenses, attribution notices, dependency license reports, and bundled asset license texts.
 
 Apache-2.0 Section 4(b) separately requires prominent notices in modified files when redistributing under that license; a top-level `NOTICE` does not replace that file-level condition. Preserve upstream copyright notices and check file-level change notices when modifying VectorCraft-derived source.
 
