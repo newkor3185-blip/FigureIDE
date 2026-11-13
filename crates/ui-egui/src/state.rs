@@ -365,6 +365,9 @@ pub struct UiState {
     /// saved.
     #[serde(skip)]
     pub context_locked: Option<(u64, Vec<vectorcraft_doc::NodeId>)>,
+    /// A document tab being renamed inline. Session-only; never written to preferences.
+    #[serde(skip)]
+    pub tab_rename: Option<TabRenameDraft>,
     /// Last tool shown in each toolbar slot (keyed by the slot's first tool id).
     #[serde(default)]
     pub slot_tool: std::collections::BTreeMap<String, String>,
@@ -598,6 +601,13 @@ pub struct UiState {
     /// restored at the next launch (the desktop host reads and writes it; none on the web).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub window: Option<WindowGeometry>,
+}
+
+#[derive(Clone, Debug)]
+pub struct TabRenameDraft {
+    pub uid: u64,
+    pub text: String,
+    pub fresh: bool,
 }
 
 /// The desktop window's geometry, kept across launches.
@@ -841,6 +851,7 @@ impl Default for UiState {
             task_bar: true,
             task_bar_place: TaskBarPlace::default(),
             context_locked: None,
+            tab_rename: None,
             slot_tool: Default::default(),
             floating_flyouts: vec![],
             toolbar_edits: ToolbarEdits::default(),

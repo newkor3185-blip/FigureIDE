@@ -2,6 +2,7 @@
 //! `fileio` decodes, encodes and saves every format.
 
 use serde_json::{Value, json};
+use std::path::{Path, PathBuf};
 use vectorcraft_doc::SavedView;
 use vectorcraft_doc::cancel;
 use vectorcraft_engine::EngineError;
@@ -282,6 +283,173 @@ fn same_open_path(a: &str, b: &str) -> bool {
         (Ok(a), Ok(b)) => a == b,
         _ => a == b,
     }
+}
+
+/// Rename one open document while preserving its format and (when saved) its directory.
+/// Creating the destination as a hard link gives us no-clobber semantics on every native
+/// filesystem supported by `std`; if the filesystem cannot hard-link, the operation fails safely.
+pub(crate) fn rename_document(app: &mut VectorcraftApp, uid: u64, requested: &str) -> Result<Option<String>, String> {
+    let (old_path, extension) = {
+        let st = app.session.documents().iter().find(|st| st.uid == uid).ok_or("that document is no longer open")?;
+        let extension =
+            st.path.as_deref().and_then(|p| Path::new(p).extension()).map(|e| e.to_string_lossy().into_owned()).unwrap_or_else(|| "fide".into());
+        (st.path.clone(), extension)
+    };
+    let mut stem = requested.to_string();
+    let typed_suffix = format!(".{extension}");
+    if stem.to_lowercase().ends_with(&typed_suffix.to_lowercase()) {
+        stem.truncate(stem.len().saturating_sub(typed_suffix.len()));
+    } else if stem.to_lowercase().ends_with(".fide") {
+        stem.truncate(stem.len().saturating_sub(".fide".len()));
+    }
+    validate_document_stem(&stem)?;
+    let filename = format!("{stem}.{extension}");
+    let new_path = if let Some(old) = old_path.as_deref() {
+        let old = Path::new(old);
+        let parent = old.parent().ok_or("the document path has no parent directory")?;
+        Some(parent.join(&filename))
+    } else {
+        None
+    };
+    if let (Some(old), Some(new)) = (old_path.as_deref(), new_path.as_deref()) {
+        if Path::new(old) == new {
+            return Ok(Some(old.to_string()));
+        }
+        let new_s = new.to_string_lossy();
+        if same_open_path(old, &new_s) {
+            return Ok(Some(old.to_string()));
+        }
+        if app.session.documents().iter().any(|other| other.uid != uid && other.path.as_deref().is_some_and(|path| same_open_path(path, &new_s))) {
+            return Err(format!("another open document already uses {filename}"));
+        }
+        let metadata = std::fs::symlink_metadata(old).map_err(|e| format!("could not inspect the current file: {e}"))?;
+        if !metadata.is_file() || metadata.file_type().is_symlink() {
+            return Err("the saved document is not a regular file".into());
+        }
+        let old_canonical = std::fs::canonicalize(old).ok();
+        let project_metadata = project_figure_metadata_update(app, old, new, &stem)?;
+        std::fs::hard_link(old, new).map_err(|e| {
+            if e.kind() == std::io::ErrorKind::AlreadyExists {
+                format!("a file named {filename} already exists")
+            } else {
+                format!("could not rename the document to {filename}: {e}")
+            }
+        })?;
+        if let Some(update) = &project_metadata
+            && let Err(error) = vectorcraft_format::write_atomic(&update.path, &update.updated)
+        {
+            let rollback = std::fs::remove_file(new);
+            return Err(match rollback {
+                Ok(()) => format!("could not update the FigureIDE project metadata: {error}"),
+                Err(rollback) => format!("could not update the project metadata ({error}); the new file link could not be rolled back ({rollback})"),
+            });
+        }
+        if let Err(error) = std::fs::remove_file(old) {
+            let rollback = std::fs::remove_file(new);
+            let metadata_rollback = project_metadata.as_ref().map(|update| vectorcraft_format::write_atomic(&update.path, &update.original));
+            let metadata_error = metadata_rollback.and_then(Result::err);
+            return Err(match (rollback, metadata_error) {
+                (Ok(()), None) => format!("could not remove the old document after renaming: {error}"),
+                (rollback, metadata_error) => format!(
+                    "could not finish the rename ({error}); rollback details: new file link: {}; project metadata: {}",
+                    rollback.err().map_or_else(|| "removed".to_string(), |e| e.to_string()),
+                    metadata_error.map_or_else(|| "restored".to_string(), |e| e.to_string())
+                ),
+            });
+        }
+        let new_value = new.to_string_lossy().into_owned();
+        for recent in &mut app.ui.recent_files {
+            if recent == old || old_canonical.as_ref().is_some_and(|old| std::fs::canonicalize(&*recent).ok().as_ref() == Some(old)) {
+                *recent = new_value.clone();
+            }
+        }
+    }
+    let st = app.session.document_mut(uid).ok_or("that document is no longer open")?;
+    std::sync::Arc::make_mut(&mut st.doc).title = stem.clone();
+    st.path = new_path.as_ref().map(|p| p.to_string_lossy().into_owned());
+    st.revision = st.revision.wrapping_add(1);
+    if app.scientific.enabled {
+        app.scientific.project_dirty = true;
+    }
+    app.status(format!("Renamed document to {filename}"));
+    Ok(new_path.map(|p| p.to_string_lossy().into_owned()))
+}
+
+/// Prepare the minimal project.json change for a saved figure in a folder project. Writing this
+/// after creating the destination link but before removing the old name keeps at least one
+/// referenced file available if the process or machine stops midway through the rename.
+struct ProjectMetadataRename {
+    path: PathBuf,
+    original: Vec<u8>,
+    updated: Vec<u8>,
+}
+
+fn project_figure_metadata_update(app: &VectorcraftApp, old: &str, new: &Path, name: &str) -> Result<Option<ProjectMetadataRename>, String> {
+    if !app.scientific.enabled {
+        return Ok(None);
+    }
+    let Some(folder) = app.scientific.project_path.as_deref().map(Path::new).filter(|p| p.is_dir()) else {
+        return Ok(None);
+    };
+    let Ok(old_relative) = Path::new(old).strip_prefix(folder) else {
+        return Ok(None);
+    };
+    let mut components = old_relative.components();
+    if components.next().is_none_or(|c| c.as_os_str() != "figures") || !components.all(|c| matches!(c, std::path::Component::Normal(_))) {
+        return Ok(None);
+    }
+    let new_relative = new.strip_prefix(folder).map_err(|_| "the renamed figure must stay in its project folder".to_string())?;
+    let old_key = old_relative.to_string_lossy().replace('\\', "/");
+    let new_key = new_relative.to_string_lossy().replace('\\', "/");
+    let metadata_path = folder.join("project.json");
+    let original = std::fs::read(&metadata_path).map_err(|e| format!("could not read FigureIDE project metadata: {e}"))?;
+    let mut value: Value = serde_json::from_slice(&original).map_err(|e| format!("could not parse FigureIDE project metadata: {e}"))?;
+    let figures = value.get_mut("figures").and_then(Value::as_array_mut).ok_or("project metadata has no figures list")?;
+    let matches: Vec<usize> = figures
+        .iter()
+        .enumerate()
+        .filter_map(|(i, figure)| (figure.get("file").and_then(Value::as_str) == Some(old_key.as_str())).then_some(i))
+        .collect();
+    let [index] = matches.as_slice() else {
+        return Err("project metadata does not contain exactly one entry for this figure".into());
+    };
+    if figures.iter().enumerate().any(|(i, figure)| i != *index && figure.get("file").and_then(Value::as_str) == Some(new_key.as_str())) {
+        return Err(format!("project metadata already refers to {new_key}"));
+    }
+    let entry = figures.get_mut(*index).ok_or("project figure metadata changed while renaming")?;
+    let object = entry.as_object_mut().ok_or("project figure metadata is invalid")?;
+    object.insert("file".into(), Value::String(new_key.clone()));
+    object.insert("name".into(), Value::String(name.to_string()));
+    if value.get("active_figure").and_then(Value::as_str) == Some(old_key.as_str()) {
+        value["active_figure"] = Value::String(new_key);
+    }
+    value["updated_at"] = Value::String(vectorcraft_format::fide::current_iso_time());
+    let updated = serde_json::to_vec_pretty(&value).map_err(|e| format!("could not serialize FigureIDE project metadata: {e}"))?;
+    Ok(Some(ProjectMetadataRename { path: metadata_path, original, updated }))
+}
+
+fn validate_document_stem(stem: &str) -> Result<(), String> {
+    if stem.is_empty() || stem.trim().is_empty() {
+        return Err("enter a non-empty document name".into());
+    }
+    if stem == "." || stem == ".." || stem.ends_with('.') || stem.ends_with(' ') {
+        return Err("document names cannot end with a dot or space".into());
+    }
+    if stem.chars().any(|c| c.is_control() || "<>:\"/\\|?*".contains(c)) {
+        return Err("document name contains a character that is not supported on all platforms".into());
+    }
+    if stem.len() > 240 {
+        return Err("document name is too long".into());
+    }
+    let device = stem.split('.').next().unwrap_or(stem).trim_end().to_ascii_uppercase();
+    if matches!(device.as_str(), "CON" | "PRN" | "AUX" | "NUL")
+        || ["COM", "LPT"].iter().any(|prefix| {
+            device.strip_prefix(prefix).is_some_and(|n| n.len() == 1 && n.as_bytes().first().is_some_and(|b| (b'1'..=b'9').contains(b)))
+        })
+    {
+        return Err("that name is reserved by Windows".into());
+    }
+    Ok(())
 }
 
 fn read(app: &VectorcraftApp, path: &str) -> Result<Vec<u8>, String> {
@@ -1131,6 +1299,70 @@ mod tests {
             ..Default::default()
         };
         (VectorcraftApp::new(Session::new(), services), written)
+    }
+
+    #[test]
+    fn renaming_an_unsaved_document_updates_only_its_suggested_name() {
+        let (mut app, _) = app();
+        app.run("file.new", json!({"width": 100, "height": 80})).unwrap();
+        let uid = app.session.active().unwrap().uid;
+        assert_eq!(rename_document(&mut app, uid, "RNAseq_Figure_01.fide").unwrap(), None);
+        let st = app.session.active().unwrap();
+        assert_eq!(st.doc.title, "RNAseq_Figure_01");
+        assert!(st.path.is_none(), "renaming an unsaved document must not create a file");
+        let plan = fileio::save_plan(&app.session, SaveMode::Save, &json!({})).unwrap();
+        assert_eq!(plan.name, "RNAseq_Figure_01.fide");
+    }
+
+    #[test]
+    fn saved_document_rename_is_no_clobber_and_save_uses_the_new_path() {
+        let dir = vectorcraft_testkit::temp_dir("tab_rename").join("saved");
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let old = dir.join("Original.fide");
+        let conflict = dir.join("Taken.fide");
+        let mut editor = VectorcraftApp::new(Session::new(), Services::default());
+        editor.run("file.new", json!({"width": 100, "height": 80})).unwrap();
+        let uid = editor.session.active().unwrap().uid;
+        editor.services.write = Some(Box::new(|path, bytes| std::fs::write(path, bytes).map_err(|e| e.to_string())));
+        save(&mut editor, SaveMode::SaveAs, &json!({"path": old}), false).unwrap();
+        editor.run("file.new", json!({"width": 40, "height": 30})).unwrap();
+        let other_uid = editor.session.active().unwrap().uid;
+        std::fs::write(&conflict, b"keep this file").unwrap();
+        let old_bytes = std::fs::read(&old).unwrap();
+        assert!(rename_document(&mut editor, uid, "Taken").is_err());
+        assert_eq!(std::fs::read(&old).unwrap(), old_bytes);
+        assert_eq!(std::fs::read(&conflict).unwrap(), b"keep this file");
+
+        let new = rename_document(&mut editor, uid, "Renamed").unwrap().unwrap();
+        assert_eq!(std::path::Path::new(&new), dir.join("Renamed.fide"));
+        assert!(!old.exists());
+        assert!(std::path::Path::new(&new).exists());
+        assert_eq!(editor.session.documents()[0].path.as_deref(), Some(new.as_str()));
+        assert!(editor.session.documents()[0].is_dirty(), "the embedded document title must be saved too");
+        assert_eq!(editor.session.active_index(), Some(1), "renaming an inactive tab keeps the active document selected");
+        assert_eq!(editor.session.documents()[1].uid, other_uid);
+        assert_eq!(editor.session.documents()[1].doc.title, "Untitled-2");
+        editor.run("document.activate", json!({"index": 0})).unwrap();
+        save(&mut editor, SaveMode::Save, &json!({}), false).unwrap();
+        assert!(!old.exists(), "saving after rename must not recreate the previous path");
+
+        let bytes = std::fs::read(&new).unwrap();
+        let (mut reopened, _) = app();
+        open_bytes(&mut reopened, "Renamed.fide", &bytes, Some(new.clone())).unwrap();
+        let st = reopened.session.active().unwrap();
+        assert_eq!(st.doc.title, "Renamed");
+        assert_eq!(st.path.as_deref(), Some(new.as_str()));
+        assert_eq!(st.doc.artboards.len(), 1);
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn rename_accepts_unicode_but_rejects_cross_platform_invalid_names() {
+        validate_document_stem("図表_α").unwrap();
+        for invalid in ["", "   ", "a/b", "a\\b", "bad?name", "name.", "name ", "CON", "LPT2"] {
+            assert!(validate_document_stem(invalid).is_err(), "{invalid:?} should be rejected");
+        }
     }
 
     /// #861: a file the user opens that can't be opened is reported in a dialog they close, not
