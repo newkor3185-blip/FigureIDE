@@ -51,7 +51,6 @@ jobs:
       MACOSX_DEPLOYMENT_TARGET: '11.0'
       CRAFT_FONTS_DIR: ${{ github.workspace }}/craft-fonts
       CRAFT_FONTS_REQUIRED: '1'
-      R_LIBS_USER: ${{ runner.temp }}/R-library
     steps:
       - name: Check out FigureIDE
         uses: actions/checkout@v4
@@ -71,6 +70,11 @@ jobs:
         with:
           targets: ${{ matrix.target }}
           components: clippy, rustfmt
+
+      - name: Initialize R package library
+        run: |
+          echo "R_LIBS_USER=$RUNNER_TEMP/R-library" >> "$GITHUB_ENV"
+          mkdir -p "$RUNNER_TEMP/R-library"
 
       - name: Install R and plotting packages
         run: |
