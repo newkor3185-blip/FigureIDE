@@ -489,6 +489,8 @@ pub fn doc_tabs(app: &mut VectorcraftApp, ui: &mut Ui) {
     let mut activate = None;
     let mut close = None;
     let mut hovering_art = false;
+    let mut rename_commit: Option<(u64, String)> = None;
+    let mut rename_cancel = false;
     for (i, ((_, galley), w)) in tabs.iter().zip(&widths).enumerate().skip(first) {
         if x + w > strip.left() + room && Some(i) != active {
             break;
@@ -508,14 +510,79 @@ pub fn doc_tabs(app: &mut VectorcraftApp, ui: &mut Ui) {
         let xr = egui::Rect::from_center_size(egui::pos2(x_center, r.center().y), vec2(12.0, 12.0));
         let xresp = ui.interact(xr.expand(3.0), ui.scope_id().with(("tabx", i)), Sense::click());
         icons::paint(ui, "x", xr, if xresp.hovered() { t.text_strong } else { t.text });
-        ui.painter().galley(egui::pos2(title_left, r.center().y - galley.size().y / 2.0), galley.clone(), t.text);
+        let uid = app.session.documents().get(i).map(|d| d.uid);
+        let editing = uid.is_some_and(|uid| app.ui.tab_rename.as_ref().is_some_and(|draft| draft.uid == uid));
+        if editing {
+            if let Some(uid) = uid
+                && let Some(mut draft) = app.ui.tab_rename.take()
+            {
+                let fresh = draft.fresh;
+                let right = if CLOSE_BEFORE_TITLE { r.right() - 8.0 } else { xr.left() - 4.0 };
+                let field =
+                    egui::Rect::from_min_max(egui::pos2(title_left, r.top() + 3.0), egui::pos2(right.max(title_left + 24.0), r.bottom() - 3.0));
+                let id = ui.make_persistent_id(("document-tab-rename", uid));
+                let response = ui.put(
+                    field,
+                    egui::TextEdit::singleline(&mut draft.text)
+                        .id(id)
+                        .font(theme::semibold(title_size))
+                        .desired_width(field.width())
+                        .clip_text(true)
+                        .margin(egui::Margin::symmetric(3, 1)),
+                );
+                if fresh {
+                    response.request_focus();
+                    let mut edit_state = egui::text_edit::TextEditState::default();
+                    let stem_len = draft.text.chars().count();
+                    edit_state
+                        .cursor
+                        .set_char_range(Some(egui::text::CCursorRange::two(egui::text::CCursor::new(0), egui::text::CCursor::new(stem_len))));
+                    edit_state.store(ui.ctx(), id);
+                    draft.fresh = false;
+                }
+                let enter = ui.input_mut(|input| input.consume_key(egui::Modifiers::NONE, egui::Key::Enter));
+                let escape = ui.input_mut(|input| input.consume_key(egui::Modifiers::NONE, egui::Key::Escape));
+                if escape {
+                    rename_cancel = true;
+                } else if enter || (!fresh && response.lost_focus()) {
+                    rename_commit = Some((uid, draft.text));
+                } else {
+                    app.ui.tab_rename = Some(draft);
+                }
+            }
+        } else {
+            ui.painter().galley(egui::pos2(title_left, r.center().y - galley.size().y / 2.0), galley.clone(), t.text);
+        }
         hovering_art |= crate::document_drag::hover_tab(app, &resp, i, xr.expand(3.0));
         if xresp.clicked() {
             close = Some(i);
+        } else if resp.double_clicked() {
+            if let Some(uid) = uid {
+                let _ = app.run("figure.rename", json!({"uid": uid}));
+            }
         } else if resp.clicked() {
             activate = Some(i);
         }
+        resp.context_menu(|ui| {
+            if ui.button(tl!("Rename")).clicked() {
+                if let Some(uid) = uid {
+                    let _ = app.run("figure.rename", json!({"uid": uid}));
+                }
+                ui.close();
+            }
+        });
         x += w;
+    }
+    if rename_cancel {
+        app.ui.tab_rename = None;
+    }
+    if let Some((uid, name)) = rename_commit {
+        app.ui.tab_rename = None;
+        let draft = crate::state::TabRenameDraft { uid, text: name.clone(), fresh: false };
+        if let Err(error) = app.run("figure.rename", json!({"uid": uid, "name": name})) {
+            app.ui.tab_rename = Some(draft);
+            app.status(format!("Could not rename document: {error}"));
+        }
     }
     crate::document_drag::finish_tabs(ui.ctx(), hovering_art);
     // The » button: every open document, the active one checked. The list scrolls once it
@@ -2261,6 +2328,24 @@ mod tests {
         titles
     }
 
+    fn artboard_document_tabs_texts_frame(
+        app: &mut crate::VectorcraftApp,
+        ctx: &egui::Context,
+        events: Vec<egui::Event>,
+    ) -> Vec<(String, egui::Rect)> {
+        app.sync_views();
+        let screen = egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(1200.0, 700.0));
+        let mut out = ctx.run_ui(egui::RawInput { screen_rect: Some(screen), events, ..Default::default() }, |ui| super::doc_tabs(app, ui));
+        out.textures_delta.clear();
+        out.shapes
+            .iter()
+            .filter_map(|shape| match &shape.shape {
+                egui::Shape::Text(t) => Some((t.galley.text().to_string(), t.visual_bounding_rect())),
+                _ => None,
+            })
+            .collect()
+    }
+
     fn artboard_document_click_tab(app: &mut crate::VectorcraftApp, ctx: &egui::Context, index: usize) {
         let titles = artboard_document_tabs_frame(app, ctx, vec![]);
         assert_eq!(titles.len(), 2, "both real document tabs must be visible");
@@ -2291,6 +2376,81 @@ mod tests {
         crate::theme::install_fonts(&ctx);
         artboard_document_click_tab(&mut app, &ctx, 0);
         (app, ctx)
+    }
+
+    #[test]
+    fn double_clicking_a_document_tab_enters_inline_rename() {
+        let (mut app, ctx) = artboard_document_app();
+        let titles = artboard_document_tabs_frame(&mut app, &ctx, vec![]);
+        let at = titles[0].center();
+        let click = |button, pressed| egui::Event::PointerButton { pos: at, button, pressed, modifiers: Default::default() };
+        artboard_document_tabs_frame(
+            &mut app,
+            &ctx,
+            vec![
+                egui::Event::PointerMoved(at),
+                click(egui::PointerButton::Primary, true),
+                click(egui::PointerButton::Primary, false),
+                click(egui::PointerButton::Primary, true),
+                click(egui::PointerButton::Primary, false),
+            ],
+        );
+        let uid = app.session.documents()[0].uid;
+        assert_eq!(app.ui.tab_rename.as_ref().map(|d| d.uid), Some(uid));
+    }
+
+    #[test]
+    fn tab_context_menu_rename_starts_the_same_inline_editor() {
+        let (mut app, ctx) = artboard_document_app();
+        let title = artboard_document_tabs_frame(&mut app, &ctx, vec![])[0];
+        let at = title.center();
+        let button = |pressed| egui::Event::PointerButton { pos: at, button: egui::PointerButton::Secondary, pressed, modifiers: Default::default() };
+        artboard_document_tabs_texts_frame(&mut app, &ctx, vec![egui::Event::PointerMoved(at), button(true)]);
+        artboard_document_tabs_texts_frame(&mut app, &ctx, vec![button(false)]);
+        let menu = artboard_document_tabs_texts_frame(&mut app, &ctx, vec![]);
+        let rename =
+            menu.iter().find(|(text, _)| text == "Rename").map(|(_, rect)| *rect).unwrap_or_else(|| panic!("tab context menu has Rename: {menu:?}"));
+        let at = rename.center();
+        let click = |pressed| egui::Event::PointerButton { pos: at, button: egui::PointerButton::Primary, pressed, modifiers: Default::default() };
+        artboard_document_tabs_texts_frame(&mut app, &ctx, vec![egui::Event::PointerMoved(at), click(true)]);
+        artboard_document_tabs_texts_frame(&mut app, &ctx, vec![click(false)]);
+        assert_eq!(app.ui.tab_rename.as_ref().map(|draft| draft.uid), Some(app.session.documents()[0].uid));
+    }
+
+    #[test]
+    fn rename_command_and_inline_enter_escape_share_document_state() {
+        let (mut app, ctx) = artboard_document_app();
+        let uid = app.session.documents()[0].uid;
+        app.run("figure.rename", json!({"uid": uid})).unwrap();
+        assert_eq!(app.ui.tab_rename.as_ref().map(|d| d.uid), Some(uid));
+        app.ui.tab_rename.as_mut().unwrap().text = "Cancel me".into();
+        artboard_document_tabs_frame(&mut app, &ctx, vec![]);
+        let escape = egui::Event::Key { key: egui::Key::Escape, physical_key: None, pressed: true, repeat: false, modifiers: Default::default() };
+        artboard_document_tabs_frame(&mut app, &ctx, vec![escape]);
+        assert!(app.ui.tab_rename.is_none());
+        assert_eq!(app.session.documents()[0].doc.title, "Untitled-1");
+
+        app.run("figure.rename", json!({"uid": uid})).unwrap();
+        artboard_document_tabs_frame(&mut app, &ctx, vec![]);
+        artboard_document_tabs_frame(&mut app, &ctx, vec![egui::Event::Text("Renamed".into())]);
+        let enter = egui::Event::Key { key: egui::Key::Enter, physical_key: None, pressed: true, repeat: false, modifiers: Default::default() };
+        artboard_document_tabs_frame(&mut app, &ctx, vec![enter]);
+        assert_eq!(app.session.documents()[0].doc.title, "Renamed");
+        assert!(app.session.documents()[0].path.is_none());
+    }
+
+    #[test]
+    fn invalid_inline_rename_keeps_the_draft_for_correction() {
+        let (mut app, ctx) = artboard_document_app();
+        let uid = app.session.documents()[0].uid;
+        app.run("figure.rename", json!({"uid": uid})).unwrap();
+        artboard_document_tabs_frame(&mut app, &ctx, vec![]);
+        app.ui.tab_rename.as_mut().unwrap().text = "Invalid/name".into();
+        let enter = egui::Event::Key { key: egui::Key::Enter, physical_key: None, pressed: true, repeat: false, modifiers: Default::default() };
+        artboard_document_tabs_frame(&mut app, &ctx, vec![enter]);
+        assert_eq!(app.session.documents()[0].doc.title, "Untitled-1");
+        assert_eq!(app.ui.tab_rename.as_ref().map(|draft| draft.text.as_str()), Some("Invalid/name"));
+        assert!(app.ui.status.contains("Could not rename document"));
     }
 
     #[test]

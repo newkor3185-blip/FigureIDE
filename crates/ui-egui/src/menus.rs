@@ -59,6 +59,7 @@ pub const UI_COMMANDS: &[(&str, &str, &str, &str)] = &[
     ("project.saveAs", "Save Project As…", "", "{path?} save the current FigureIDE project workspace to a new folder"),
     ("figure.save", "Save Figure", "", "{path?} save the active figure as an individual .fide document"),
     ("figure.saveAs", "Save Figure As…", "", "{path?} save the active figure as an individual .fide document with a new name"),
+    ("figure.rename", "Rename Figure", "", "{uid, name?} rename an open document from its tab; omit name to start inline editing"),
     ("r.workspace.save", "Save R Workspace", "", "{path?} save the current R session global environment to workspace.RData"),
     ("r.workspace.load", "Load R Workspace…", "", "{path?} load an RData workspace file into the current R session"),
     (
@@ -1416,6 +1417,29 @@ pub fn run_ui_command(app: &mut VectorcraftApp, id: &str, p: &Value) -> Option<R
         "file.newDialog" => {
             crate::dialogs::open_new_document(app);
             Ok(Value::Null)
+        }
+        "figure.rename" => {
+            let Some(uid) = p.get("uid").and_then(Value::as_u64) else {
+                return Some(Err("figure.rename needs a document uid".into()));
+            };
+            if let Some(name) = p.get("name").and_then(Value::as_str) {
+                crate::io::rename_document(app, uid, name).map(|path| json!({"path": path}))
+            } else {
+                let Some(st) = app.session.documents().iter().find(|st| st.uid == uid) else {
+                    return Some(Err("that document is no longer open".into()));
+                };
+                let current =
+                    st.path.as_deref().and_then(|p| std::path::Path::new(p).file_stem()).map(|n| n.to_string_lossy().into_owned()).unwrap_or_else(
+                        || {
+                            std::path::Path::new(&st.doc.title)
+                                .file_stem()
+                                .map(|n| n.to_string_lossy().into_owned())
+                                .unwrap_or_else(|| st.doc.title.clone())
+                        },
+                    );
+                app.ui.tab_rename = Some(crate::state::TabRenameDraft { uid, text: current, fresh: true });
+                Ok(json!({"renaming": uid}))
+            }
         }
         "file.newWithoutDialog" => crate::dialogs::new_document_without_dialog(app),
         "app.home" => {

@@ -244,7 +244,7 @@ pub(crate) fn apply_fide_project(app: &mut VectorcraftApp, project: FideProject,
 }
 
 /// Inspect the workspace and build a serializable `FideProjectFolder`.
-pub(crate) fn build_fide_project_folder(app: &VectorcraftApp, name: &str) -> Result<FideProjectFolder, String> {
+pub(crate) fn build_fide_project_folder(app: &VectorcraftApp, name: &str, folder_path: &Path) -> Result<FideProjectFolder, String> {
     let mut scripts = Vec::new();
     let mut script_metas = Vec::new();
     for s in &app.scientific.scripts {
@@ -277,7 +277,8 @@ pub(crate) fn build_fide_project_folder(app: &VectorcraftApp, name: &str) -> Res
             let name = if st.doc.title.is_empty() { format!("Figure {}", idx + 1) } else { st.doc.title.clone() };
             let stem = name.chars().map(|c| if c.is_alphanumeric() || c == '_' || c == '-' { c } else { '_' }).collect::<String>();
             let stem = if stem.is_empty() { "Figure".to_string() } else { stem };
-            let file_rel = if docs.len() > 1 { format!("figures/{stem}_{:02}.fide", idx + 1) } else { format!("figures/{stem}.fide") };
+            let file_rel = project_figure_file(folder_path, st)
+                .unwrap_or_else(|| if docs.len() > 1 { format!("figures/{stem}_{:02}.fide", idx + 1) } else { format!("figures/{stem}.fide") });
             figure_metas.push(FideFigureMeta {
                 id: format!("fig_{}", idx + 1),
                 name: name.clone(),
@@ -350,6 +351,19 @@ pub(crate) fn build_fide_project_folder(app: &VectorcraftApp, name: &str) -> Res
     };
 
     Ok(FideProjectFolder { metadata, scripts, figures, assets: BTreeMap::new() })
+}
+
+fn project_figure_file(folder_path: &Path, st: &vectorcraft_engine::DocState) -> Option<String> {
+    let path = Path::new(st.path.as_deref()?);
+    let relative = path.strip_prefix(folder_path).ok()?;
+    let mut components = relative.components();
+    if components.next()?.as_os_str() != "figures" || !components.all(|c| matches!(c, std::path::Component::Normal(_))) {
+        return None;
+    }
+    if !relative.extension().is_some_and(|ext| ext.eq_ignore_ascii_case("fide")) {
+        return None;
+    }
+    Some(relative.to_string_lossy().replace('\\', "/"))
 }
 
 /// Apply a restored `FideProjectFolder` to the application and scientific workspace.
@@ -579,8 +593,17 @@ pub(crate) fn save_project_to_path(app: &mut VectorcraftApp, path: &str, save_r_
         ws_info = Some(info);
     }
 
-    let proj = build_fide_project_folder(app, project_name)?;
+    let proj = build_fide_project_folder(app, project_name, &folder_path)?;
     save_project_folder(&folder_path, &proj).map_err(|e| e.to_string())?;
+
+    let saved_figure_paths: Vec<String> =
+        proj.metadata.figures.iter().map(|figure| folder_path.join(&figure.file).to_string_lossy().into_owned()).collect();
+    let saved_figure_uids: Vec<u64> = app.session.documents().iter().map(|st| st.uid).collect();
+    for (uid, path) in saved_figure_uids.into_iter().zip(saved_figure_paths) {
+        if let Some(st) = app.session.document_mut(uid) {
+            st.path = Some(path);
+        }
+    }
 
     app.scientific.project_path = Some(folder_path.to_string_lossy().into_owned());
     app.scientific.last_project_parent = folder_path.parent().map(Path::to_path_buf);
@@ -689,11 +712,13 @@ pub(crate) fn save_figure_as_command(app: &mut VectorcraftApp, p: &Value) -> Res
     let default_name = app
         .session
         .active()
-        .and_then(|d| d.path.as_ref())
-        .and_then(|p| Path::new(p).file_name())
-        .and_then(|n| n.to_str())
-        .unwrap_or("Figure.fide")
-        .to_string();
+        .map(|d| {
+            d.path.as_deref().and_then(|p| Path::new(p).file_name()).and_then(|n| n.to_str()).map(str::to_owned).unwrap_or_else(|| {
+                let stem = Path::new(&d.doc.title).file_stem().and_then(|n| n.to_str()).unwrap_or(&d.doc.title);
+                format!("{stem}.{FIDE_EXTENSION}")
+            })
+        })
+        .unwrap_or_else(|| format!("Figure.{FIDE_EXTENSION}"));
 
     let pick = crate::FilePick {
         name: default_name,
@@ -1045,7 +1070,7 @@ pub(crate) fn create_or_save_project(
 
     let prev_project_path = app.scientific.project_path.clone();
     app.scientific.project_path = Some(target_dir.to_string_lossy().into_owned());
-    let proj = build_fide_project_folder(app, name)?;
+    let proj = build_fide_project_folder(app, name, target_dir)?;
     if let Err(e) = save_project_folder(target_dir, &proj) {
         app.scientific.project_path = prev_project_path;
         if was_new_dir {
@@ -1190,6 +1215,78 @@ mod tests {
         let mut app = VectorcraftApp::new(vectorcraft_engine::Session::new(), Default::default());
         app.scientific.enabled = true;
         app
+    }
+
+    #[test]
+    fn renaming_a_project_figure_updates_the_project_reference_and_roundtrips() {
+        let mut app = make_test_app();
+        app.run("file.new", json!({"width": 100, "height": 80, "name": "Original"})).unwrap();
+        let rect = app.run("shape.rectangle", json!({"x": 10, "y": 12, "width": 20, "height": 15})).unwrap()["id"].as_u64().unwrap();
+        let uid = app.session.active().unwrap().uid;
+        let script_id = app.scientific.next_script_id;
+        app.scientific.scripts.push(ScriptDocument::new(script_id, "plot(1:3)".into(), Some("/study/scripts/analysis.R".into()), None));
+        app.scientific.next_script_id = script_id.saturating_add(1);
+        app.run("select.set", json!({"ids": [rect]})).unwrap();
+        let generated = app.run("object.group", json!({})).unwrap()["id"].as_u64().unwrap();
+        app.run("object.setName", json!({"id": generated, "name": "RVS_GENERATED"})).unwrap();
+        app.run("object.markRGenerated", json!({"group": generated})).unwrap();
+        let label = app.run("text.create", json!({"x": 10, "y": 8, "text": "A"})).unwrap()["id"].as_u64().unwrap();
+        app.run("object.setName", json!({"id": label, "name": "RVS_LABEL"})).unwrap();
+        app.run("select.set", json!({"ids": [generated, label]})).unwrap();
+        let panel_id = app.run("object.group", json!({})).unwrap()["id"].as_u64().unwrap();
+        let panel = RLinkedPanel {
+            panel_id,
+            generated_id: generated,
+            label: "A".into(),
+            r_variable: "p_scatter".into(),
+            width_mm: 50.0,
+            height_mm: 40.0,
+            resize_mode: ResizeMode::Reflow,
+            graph_style: GraphStyle::default(),
+            small_figure_typography: false,
+            document_uid: uid,
+        };
+        let panel_name = super::super::persistent_panel_name(&panel, 50.0, 40.0, ResizeMode::Reflow);
+        app.run("object.setName", json!({"id": panel_id, "name": panel_name})).unwrap();
+        app.scientific.linked_panels.push(panel);
+        assert_eq!(app.session.active().unwrap().doc.layers[0].children().unwrap().len(), 1);
+        let project_path = vectorcraft_testkit::temp_dir("project_tab_rename").join("study");
+        let _ = std::fs::remove_dir_all(&project_path);
+        save_project_to_path(&mut app, &project_path.to_string_lossy(), None).unwrap();
+        let old = project_path.join("figures/Original.fide");
+        assert!(old.exists());
+
+        let new = crate::io::rename_document(&mut app, uid, "RNAseq_図表").unwrap().unwrap();
+        assert_eq!(std::path::Path::new(&new), project_path.join("figures/RNAseq_図表.fide"));
+        assert!(!old.exists());
+        assert!(app.scientific.project_dirty);
+        let renamed_metadata = load_project_folder(&project_path).unwrap().metadata;
+        assert_eq!(renamed_metadata.figures.first().map(|f| (f.name.as_str(), f.file.as_str())), Some(("RNAseq_図表", "figures/RNAseq_図表.fide")));
+        assert_eq!(renamed_metadata.active_figure.as_deref(), Some("figures/RNAseq_図表.fide"));
+        save_project_to_path(&mut app, &project_path.to_string_lossy(), None).unwrap();
+        assert!(!app.scientific.project_dirty);
+        let folder = load_project_folder(&project_path).unwrap();
+        assert_eq!(folder.metadata.figures.first().map(|f| f.file.as_str()), Some("figures/RNAseq_図表.fide"));
+        assert_eq!(folder.figures[0].doc.title, "RNAseq_図表");
+        assert_eq!(folder.figures[0].doc.layers[0].children().unwrap().len(), 1);
+        assert!(!old.exists(), "saving the project must not recreate the stale path");
+        assert!(project_path.join("figures/RNAseq_図表.fide").exists());
+
+        let mut reopened = make_test_app();
+        open_project_from_path(&mut reopened, &project_path.to_string_lossy()).unwrap();
+        assert_eq!(reopened.session.active().unwrap().doc.layers[0].children().unwrap().len(), 1);
+        assert_eq!(reopened.session.active().unwrap().title(), "RNAseq_図表.fide");
+        assert!(
+            reopened
+                .scientific
+                .scripts
+                .iter()
+                .any(|script| script.text == "plot(1:3)" && script.path.as_deref() == Some("/study/scripts/analysis.R"))
+        );
+        assert_eq!(reopened.scientific.linked_panels.len(), 1);
+        assert_eq!(reopened.scientific.linked_panels[0].r_variable, "p_scatter");
+        assert_eq!(reopened.scientific.linked_panels[0].document_uid, reopened.session.active().unwrap().uid);
+        std::fs::remove_dir_all(project_path).unwrap();
     }
 
     // 1. Full roundtrip save and reopen of Airway Analysis with 2 scripts, 2 figures, 3 linked plots
