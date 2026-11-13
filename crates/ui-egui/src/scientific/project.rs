@@ -1219,8 +1219,35 @@ mod tests {
     fn renaming_a_project_figure_updates_the_project_reference_and_roundtrips() {
         let mut app = make_test_app();
         app.run("file.new", json!({"width": 100, "height": 80, "name": "Original"})).unwrap();
-        app.run("shape.rectangle", json!({"x": 10, "y": 12, "width": 20, "height": 15})).unwrap();
+        let rect = app.run("shape.rectangle", json!({"x": 10, "y": 12, "width": 20, "height": 15})).unwrap()["id"].as_u64().unwrap();
         let uid = app.session.active().unwrap().uid;
+        let script_id = app.scientific.next_script_id;
+        app.scientific.scripts.push(ScriptDocument::new(script_id, "plot(1:3)".into(), Some("/study/scripts/analysis.R".into()), None));
+        app.scientific.next_script_id = script_id.saturating_add(1);
+        app.run("select.set", json!({"ids": [rect]})).unwrap();
+        let generated = app.run("object.group", json!({})).unwrap()["id"].as_u64().unwrap();
+        app.run("object.setName", json!({"id": generated, "name": "RVS_GENERATED"})).unwrap();
+        app.run("object.markRGenerated", json!({"group": generated})).unwrap();
+        let label = app.run("text.create", json!({"x": 10, "y": 8, "text": "A"})).unwrap()["id"].as_u64().unwrap();
+        app.run("object.setName", json!({"id": label, "name": "RVS_LABEL"})).unwrap();
+        app.run("select.set", json!({"ids": [generated, label]})).unwrap();
+        let panel_id = app.run("object.group", json!({})).unwrap()["id"].as_u64().unwrap();
+        let panel = RLinkedPanel {
+            panel_id,
+            generated_id: generated,
+            label: "A".into(),
+            r_variable: "p_scatter".into(),
+            width_mm: 50.0,
+            height_mm: 40.0,
+            resize_mode: ResizeMode::Reflow,
+            graph_style: GraphStyle::default(),
+            small_figure_typography: false,
+            document_uid: uid,
+        };
+        let panel_name = super::super::persistent_panel_name(&panel, 50.0, 40.0, ResizeMode::Reflow);
+        app.run("object.setName", json!({"id": panel_id, "name": panel_name})).unwrap();
+        app.scientific.linked_panels.push(panel);
+        assert_eq!(app.session.active().unwrap().doc.layers[0].children().unwrap().len(), 1);
         let project_path = vectorcraft_testkit::temp_dir("project_tab_rename").join("study");
         let _ = std::fs::remove_dir_all(&project_path);
         save_project_to_path(&mut app, &project_path.to_string_lossy(), None).unwrap();
@@ -1247,6 +1274,16 @@ mod tests {
         open_project_from_path(&mut reopened, &project_path.to_string_lossy()).unwrap();
         assert_eq!(reopened.session.active().unwrap().doc.layers[0].children().unwrap().len(), 1);
         assert_eq!(reopened.session.active().unwrap().title(), "RNAseq_図表.fide");
+        assert!(
+            reopened
+                .scientific
+                .scripts
+                .iter()
+                .any(|script| script.text == "plot(1:3)" && script.path.as_deref() == Some("/study/scripts/analysis.R"))
+        );
+        assert_eq!(reopened.scientific.linked_panels.len(), 1);
+        assert_eq!(reopened.scientific.linked_panels[0].r_variable, "p_scatter");
+        assert_eq!(reopened.scientific.linked_panels[0].document_uid, reopened.session.active().unwrap().uid);
         std::fs::remove_dir_all(project_path).unwrap();
     }
 

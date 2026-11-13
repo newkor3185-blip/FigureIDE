@@ -578,7 +578,9 @@ pub fn doc_tabs(app: &mut VectorcraftApp, ui: &mut Ui) {
     }
     if let Some((uid, name)) = rename_commit {
         app.ui.tab_rename = None;
+        let draft = crate::state::TabRenameDraft { uid, text: name.clone(), fresh: false };
         if let Err(error) = app.run("figure.rename", json!({"uid": uid, "name": name})) {
+            app.ui.tab_rename = Some(draft);
             app.status(format!("Could not rename document: {error}"));
         }
     }
@@ -2435,6 +2437,20 @@ mod tests {
         artboard_document_tabs_frame(&mut app, &ctx, vec![enter]);
         assert_eq!(app.session.documents()[0].doc.title, "Renamed");
         assert!(app.session.documents()[0].path.is_none());
+    }
+
+    #[test]
+    fn invalid_inline_rename_keeps_the_draft_for_correction() {
+        let (mut app, ctx) = artboard_document_app();
+        let uid = app.session.documents()[0].uid;
+        app.run("figure.rename", json!({"uid": uid})).unwrap();
+        artboard_document_tabs_frame(&mut app, &ctx, vec![]);
+        app.ui.tab_rename.as_mut().unwrap().text = "Invalid/name".into();
+        let enter = egui::Event::Key { key: egui::Key::Enter, physical_key: None, pressed: true, repeat: false, modifiers: Default::default() };
+        artboard_document_tabs_frame(&mut app, &ctx, vec![enter]);
+        assert_eq!(app.session.documents()[0].doc.title, "Untitled-1");
+        assert_eq!(app.ui.tab_rename.as_ref().map(|draft| draft.text.as_str()), Some("Invalid/name"));
+        assert!(app.ui.status.contains("Could not rename document"));
     }
 
     #[test]
