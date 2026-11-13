@@ -99,7 +99,7 @@ plutil -lint "$APP/Contents/Info.plist"
 [[ -x "$APP/Contents/MacOS/FigureIDE" ]]
 [[ -s "$RESOURCES/FigureIDE.icns" ]]
 [[ -s "$RESOURCES/LICENSE-MIT" && -s "$RESOURCES/LICENSE-APACHE" && -s "$RESOURCES/NOTICE" ]]
-lipo -verify_arch "$MACH_ARCH" "$APP/Contents/MacOS/FigureIDE"
+lipo "$APP/Contents/MacOS/FigureIDE" -verify_arch "$MACH_ARCH"
 codesign --force --deep --sign - "$APP"
 codesign --verify --deep --strict "$APP"
 "$APP/Contents/MacOS/FigureIDE" --version
