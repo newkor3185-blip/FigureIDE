@@ -53,10 +53,10 @@ jobs:
       CRAFT_FONTS_REQUIRED: '1'
     steps:
       - name: Check out FigureIDE
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Check out pinned craft-fonts
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           repository: storytold/craft-fonts
           ref: b076417b5880bd4154bd22f00695b1d28c6bea83
@@ -112,7 +112,7 @@ jobs:
         run: DIST=dist packaging/figureide-macos/package.sh ${{ matrix.package_arch }}
 
       - name: Upload macOS ZIP
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: FigureIDE-macOS-${{ matrix.artifact }}
           path: dist/FigureIDE-macOS-${{ matrix.artifact }}.zip
