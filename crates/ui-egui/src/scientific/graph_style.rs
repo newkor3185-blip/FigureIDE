@@ -300,8 +300,8 @@ impl GraphStyle {
             }
         }
         for (name, value) in [("X-axis line width", self.axis_x_line_mm), ("Y-axis line width", self.axis_y_line_mm)] {
-            if value.is_some_and(|number| !number.is_finite() || !(0.1..=20.0).contains(&number)) {
-                return Err(format!("{name} must be between 0.1 and 20 mm"));
+            if value.is_some_and(|number| !number.is_finite() || !(0.0..=20.0).contains(&number)) {
+                return Err(format!("{name} must be between 0 and 20 mm"));
             }
         }
         if self.legend_key_mm.is_some_and(|number| !number.is_finite() || !(0.1..=100.0).contains(&number)) {
@@ -351,8 +351,8 @@ impl GraphStyle {
             ("Minor grid width", self.minor_grid_width_mm),
             ("Panel border width", self.panel_border_width_mm),
         ] {
-            if value.is_some_and(|number| !number.is_finite() || !(0.01..=20.0).contains(&number)) {
-                return Err(format!("{name} must be between 0.01 and 20 mm"));
+            if value.is_some_and(|number| !number.is_finite() || !(0.0..=20.0).contains(&number)) {
+                return Err(format!("{name} must be between 0 and 20 mm"));
             }
         }
         for (name, value) in [
@@ -506,6 +506,15 @@ mod tests {
         assert_eq!(GraphStyle::default().wire().unwrap().split('|').count(), 23);
         let style = GraphStyle { axis_x_line_mm: Some(f64::NAN), ..Default::default() };
         assert!(style.wire().is_err());
+    }
+
+    #[test]
+    fn zero_width_presets_are_valid_but_values_outside_graph_bounds_are_rejected() {
+        let zero_widths =
+            GraphStyle { axis_x_line_mm: Some(0.0), major_grid_width_mm: Some(0.0), minor_grid_width_mm: Some(0.0), ..Default::default() };
+        assert!(zero_widths.validate().is_ok());
+        assert!(GraphStyle { plot_title_pt: Some(100.1), ..Default::default() }.validate().is_err());
+        assert!(GraphStyle { axis_y_line_mm: Some(20.1), ..Default::default() }.validate().is_err());
     }
 
     #[test]
