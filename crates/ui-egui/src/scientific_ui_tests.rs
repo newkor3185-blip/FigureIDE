@@ -758,6 +758,14 @@ fn graph_dock_shows_panel_controls_and_empty_state_at_narrow_width() {
     ] {
         assert!(h.query_all_by_label(label).next().is_some(), "missing Graph control {label}");
     }
+    let x = h.get_by_role_and_label(Role::TextInput, "X position").rect();
+    let y = h.get_by_role_and_label(Role::TextInput, "Y position").rect();
+    let width = h.get_by_role_and_label(Role::TextInput, "Output width").rect();
+    let height = h.get_by_role_and_label(Role::TextInput, "Output height").rect();
+    assert!((x.center().y - width.center().y).abs() < 1.0, "X and W share a row: {x:?} / {width:?}");
+    assert!((y.center().y - height.center().y).abs() < 1.0, "Y and H share a row: {y:?} / {height:?}");
+    assert!((x.width() - width.width()).abs() < 1.0, "X and W fields have equal widths: {x:?} / {width:?}");
+    assert!((y.width() - height.width()).abs() < 1.0, "Y and H fields have equal widths: {y:?} / {height:?}");
     assert!(h.query_by_label("X-axis tick labels visibility").is_some());
     assert!(h.query_by_label("X line width").is_some());
     assert!(h.query_by_label("Y line width").is_some());
