@@ -701,15 +701,90 @@ fn graph_dock_shows_panel_controls_and_empty_state_at_narrow_width() {
         "Unlink",
         "Delete Artwork",
         "Figure Size",
-        "Axes",
-        "Typography",
+        "Titles & Labels",
+        "Axes & Ticks",
         "Legend",
+        "Colors & Theme",
+        "Panel & Layout",
         "Reset Graph Styles to R",
-        "X-axis tick labels",
-        "X-axis title",
     ] {
         assert!(h.query_all_by_label(label).next().is_some(), "missing Graph control {label}");
     }
+    assert!(h.query_by_label("X-axis tick labels").is_none(), "advanced controls stay inside their popover until requested");
+    for (category, controls) in [
+        (
+            "Titles & Labels",
+            &[
+                "Plot title",
+                "Plot subtitle",
+                "Plot caption",
+                "X-axis title",
+                "Y-axis title",
+                "X-axis tick labels",
+                "Y-axis tick labels",
+                "Facet strip text",
+                "Title position",
+            ][..],
+        ),
+        ("Axes & Ticks", &["Axis lines", "X line width", "Y line width", "X-axis line", "Y-axis line", "Tick marks and labels"][..]),
+        ("Legend", &["Placement", "Position", "Direction", "Legend justification", "Keys and spacing", "Text"][..]),
+        (
+            "Colors & Theme",
+            &["Grid lines", "Major grid", "Major grid X", "Major grid Y", "Minor grid X", "Minor grid Y", "Plot, panel and facet fills"][..],
+        ),
+        ("Panel & Layout", &["Plot margins", "Panel spacing"][..]),
+    ] {
+        h.get_by_label(category).click_accesskit();
+        h.run_steps(2);
+        for control in controls {
+            assert!(h.query_all_by_label(control).next().is_some(), "{category} popover must expose {control}");
+        }
+        if category == "Titles & Labels" {
+            h.get_by_label("Plot title").click_accesskit();
+            h.run_steps(2);
+            capture(&mut h, BottomTab::LinkedPanels, 900.0, 1.0, "graph-inspector-titles-popover", &json!({"category": category}));
+        }
+        match category {
+            "Axes & Ticks" => {
+                h.get_by_label("Tick marks and labels").click_accesskit();
+                h.run_steps(2);
+                for control in [
+                    "X tick marks",
+                    "Y tick marks",
+                    "X tick colour",
+                    "Y tick colour",
+                    "X tick width",
+                    "Y tick width",
+                    "X tick length",
+                    "Y tick length",
+                ] {
+                    assert!(h.query_all_by_label(control).next().is_some(), "Axes & Ticks popover must expose {control}");
+                }
+            }
+            "Legend" => {
+                h.get_by_label("Keys and spacing").click_accesskit();
+                h.run_steps(2);
+                for control in ["Legend key", "Key width", "Key height", "Key fill", "Legend fill", "Spacing X", "Spacing Y", "Legend margins"] {
+                    assert!(h.query_all_by_label(control).next().is_some(), "Legend popover must expose {control}");
+                }
+                h.get_by_label("Text").click_accesskit();
+                h.run_steps(2);
+                assert!(h.query_all_by_label("Legend title").next().is_some());
+                assert!(h.query_all_by_label("Legend text").next().is_some());
+            }
+            "Colors & Theme" => {
+                h.get_by_label("Plot, panel and facet fills").click_accesskit();
+                h.run_steps(2);
+                for control in ["Panel fill", "Plot fill", "Panel border", "Border colour", "Border width", "Facet strip fill"] {
+                    assert!(h.query_all_by_label(control).next().is_some(), "Colors & Theme popover must expose {control}");
+                }
+            }
+            _ => {}
+        }
+        h.get_by_label(category).click_accesskit();
+        h.run_steps(2);
+    }
+    capture(&mut h, BottomTab::LinkedPanels, 900.0, 1.0, "graph-inspector-categories", &json!({"categories": 5}));
     assert!(h.query_by_label("Linked Plot Panel").is_none());
     assert!(h.query_by_label("Scale").is_none());
     h.state_mut().run("select.none", json!({})).unwrap();
@@ -727,6 +802,8 @@ fn graph_visibility_control_and_apply_queue_keep_font_size() {
     // Keep the fixture's synthetic R plot from starting a real render.
     h.state_mut().scientific.running = true;
     h.run_steps(5);
+    h.get_by_label("Titles & Labels").click_accesskit();
+    h.run_steps(2);
     h.get_by_label("X-axis tick labels").click_accesskit();
     h.run_steps(2);
     assert!(h.query_by_role_and_label(Role::ComboBox, "X-axis tick labels visibility").is_some());
@@ -753,6 +830,8 @@ fn graph_numeric_edit_waits_for_enter_before_queuing_render() {
     h.state_mut().run("select.set", json!({"ids": [panel]})).unwrap();
     h.state_mut().scientific.running = true;
     h.run_steps(5);
+    h.get_by_label("Axes & Ticks").click_accesskit();
+    h.run_steps(2);
     h.get_by_role_and_label(Role::SpinButton, "X line width").click();
     h.run_steps(2);
     let input = h.get_by_role_and_label(Role::SpinButton, "X line width");
@@ -778,6 +857,17 @@ fn graph_numeric_edit_waits_for_enter_before_queuing_render() {
     }
     h.run_steps(2);
     assert_eq!(h.state().scientific.graph_pending.get(&key).and_then(|request| request.style.axis_x_line_mm), Some(2.1));
+    h.get_by_label("Axes & Ticks").click_accesskit();
+    h.run_steps(2);
+    assert!(!egui::Popup::is_any_open(&h.ctx), "clicking the active category closes its popover");
+    h.get_by_label("Axes & Ticks").click_accesskit();
+    h.run_steps(2);
+    assert_eq!(
+        h.state().scientific.graph_drafts.get(&key).and_then(|style| style.axis_x_line_mm),
+        Some(2.1),
+        "closing and reopening preserves the edited draft"
+    );
+    assert!(h.query_by_role_and_label(Role::SpinButton, "X line width").is_some());
 }
 
 #[test]
