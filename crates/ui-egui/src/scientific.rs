@@ -11,6 +11,7 @@ pub(crate) mod diagnostics;
 pub(crate) mod distribution;
 mod environment;
 pub(crate) mod export;
+mod graph_r_code;
 pub(crate) mod graph_style;
 pub(crate) mod graph_tab;
 mod inspector;
