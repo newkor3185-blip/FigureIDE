@@ -60,12 +60,14 @@ jobs:
             libwayland-dev libx11-dev libxcb1-dev libxcursor-dev libxrandr-dev libxi-dev \
             libfontconfig1-dev libfreetype-dev libgl1-mesa-dev mesa-vulkan-drivers \
             r-base r-cran-ggplot2 r-cran-svglite r-cran-systemfonts
-          echo "R_LIBS_SITE=/usr/lib/R/site-library" >> "$GITHUB_ENV"
+          echo "R_LIBS_USER=$RUNNER_TEMP/R-library" >> "$GITHUB_ENV"
+          mkdir -p "$RUNNER_TEMP/R-library"
 
       - name: Check R plotting dependencies
         run: |
-          Rscript -e 'stopifnot(requireNamespace("ggplot2", quietly = TRUE), requireNamespace("svglite", quietly = TRUE), requireNamespace("systemfonts", quietly = TRUE)); cat(R.version.string, "\n")'
-          Rscript -e 'svg <- tempfile(fileext=".svg"); svglite::svglite(svg, width=7, height=5); print(ggplot2::ggplot(iris, ggplot2::aes(Sepal.Length, Sepal.Width, colour=Species)) + ggplot2::geom_point()); grDevices::dev.off(); text <- paste(readLines(svg), collapse="\n"); stopifnot(grepl("<svg", text, fixed=TRUE), nchar(text) > 200); unlink(svg)'
+          Rscript -e 'install.packages(c("ggplot2", "svglite", "systemfonts"), lib=Sys.getenv("R_LIBS_USER"), repos="https://cloud.r-project.org")'
+          R_LIBS_USER="$R_LIBS_USER" Rscript -e 'stopifnot(requireNamespace("ggplot2", quietly = TRUE), requireNamespace("svglite", quietly = TRUE), requireNamespace("systemfonts", quietly = TRUE)); cat(R.version.string, "\n")'
+          R_LIBS_USER="$R_LIBS_USER" Rscript -e 'svg <- tempfile(fileext=".svg"); svglite::svglite(svg, width=7, height=5); print(ggplot2::ggplot(iris, ggplot2::aes(Sepal.Length, Sepal.Width, colour=Species)) + ggplot2::geom_point()); grDevices::dev.off(); text <- paste(readLines(svg), collapse="\n"); stopifnot(grepl("<svg", text, fixed=TRUE), nchar(text) > 200); unlink(svg)'
 
       - name: Format check
         run: cargo fmt --all --check
