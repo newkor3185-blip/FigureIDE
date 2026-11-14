@@ -868,7 +868,7 @@ fn graph_inspector_compact_controls_render_at_narrow_medium_and_wide_widths() {
         h.state_mut().run("select.set", json!({"ids": [panel.panel_id]})).unwrap();
         h.run_steps(5);
 
-        let title_size = h.get_all_by_role_and_label(Role::SpinButton, "Title").next().unwrap().rect();
+        let title_size = h.get_all_by_role_and_label(Role::TextInput, "Title").next().unwrap().rect();
         let title_face = h.get_all_by_role_and_label(Role::ComboBox, "Title font face").next().unwrap().rect();
         let top_controls = [
             ("X", h.get_by_role_and_label(Role::TextInput, "X position").rect()),
@@ -950,9 +950,9 @@ fn graph_numeric_edit_waits_for_enter_before_queuing_render() {
     h.run_steps(5);
     h.query_all_by_label("Line").next().expect("axis line popover").click_accesskit();
     h.run_steps(2);
-    h.get_by_role_and_label(Role::SpinButton, "X line width").click();
+    h.get_by_role_and_label(Role::TextInput, "X line width").click();
     h.run_steps(2);
-    let input = h.get_by_role_and_label(Role::SpinButton, "X line width");
+    let input = h.get_by_role_and_label(Role::TextInput, "X line width");
     input.focus();
     h.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::A);
     input.type_text("1.7");
@@ -961,20 +961,26 @@ fn graph_numeric_edit_waits_for_enter_before_queuing_render() {
     h.key_press(egui::Key::Enter);
     h.run_steps(2);
     let request = h.state().scientific.graph_pending.get(&key).expect("Enter should queue render");
-    assert_eq!(request.style.axis_x_line_mm, Some(1.7));
-    h.get_by_role_and_label(Role::SpinButton, "X line width").click();
+    assert_eq!(request.style.axis_x_line_mm, Some(vectorcraft_doc::Unit::Millimeters.from_pt(1.7)));
+    h.get_by_role_and_label(Role::TextInput, "X line width").click();
     h.run_steps(2);
-    let input = h.get_by_role_and_label(Role::SpinButton, "X line width");
+    let input = h.get_by_role_and_label(Role::TextInput, "X line width");
     input.focus();
     h.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::A);
     input.type_text("2.1");
     h.run_steps(2);
-    assert_eq!(h.state().scientific.graph_pending.get(&key).and_then(|request| request.style.axis_x_line_mm), Some(1.7));
+    assert_eq!(
+        h.state().scientific.graph_pending.get(&key).and_then(|request| request.style.axis_x_line_mm),
+        Some(vectorcraft_doc::Unit::Millimeters.from_pt(1.7))
+    );
     if let Some(focused) = h.ctx.memory(|memory| memory.focused()) {
         h.ctx.memory_mut(|memory| memory.surrender_focus(focused));
     }
     h.run_steps(2);
-    assert_eq!(h.state().scientific.graph_pending.get(&key).and_then(|request| request.style.axis_x_line_mm), Some(2.1));
+    assert_eq!(
+        h.state().scientific.graph_pending.get(&key).and_then(|request| request.style.axis_x_line_mm),
+        Some(vectorcraft_doc::Unit::Millimeters.from_pt(2.1))
+    );
     h.query_all_by_label("Line").next().unwrap().click_accesskit();
     h.run_steps(2);
     assert!(!egui::Popup::is_any_open(&h.ctx), "clicking the active property closes its popover");
@@ -982,10 +988,101 @@ fn graph_numeric_edit_waits_for_enter_before_queuing_render() {
     h.run_steps(2);
     assert_eq!(
         h.state().scientific.graph_drafts.get(&key).and_then(|style| style.axis_x_line_mm),
-        Some(2.1),
+        Some(vectorcraft_doc::Unit::Millimeters.from_pt(2.1)),
         "closing and reopening preserves the edited draft"
     );
-    assert!(h.query_by_role_and_label(Role::SpinButton, "X line width").is_some());
+    assert!(h.query_by_role_and_label(Role::TextInput, "X line width").is_some());
+}
+
+#[test]
+fn graph_point_input_keeps_r_defaults_precision_presets_and_fixed_steps() {
+    let mut h = linked_workspace_harness(1200.0, 900.0, 1.0);
+    let panel = h.state().scientific.linked_panels[0].clone();
+    let key = (panel.document_uid, panel.panel_id);
+    h.state_mut().run("select.set", json!({"ids": [panel.panel_id]})).unwrap();
+    h.state_mut().scientific.running = true;
+    h.run_steps(5);
+
+    assert_eq!(
+        h.state().scientific.graph_drafts.get(&key).and_then(|style| style.plot_title_pt),
+        None,
+        "R default remains inherited on first render"
+    );
+    let title = h.get_all_by_role_and_label(Role::TextInput, "Title").next().unwrap();
+    title.focus();
+    title.type_text("14.25");
+    h.run_steps(2);
+    assert!(h.state().scientific.graph_pending.get(&key).is_none(), "typing keeps focus and does not re-render before commit");
+    h.key_press(egui::Key::Enter);
+    h.run_steps(2);
+    assert_eq!(h.state().scientific.graph_drafts.get(&key).and_then(|style| style.plot_title_pt), Some(14.25));
+
+    let title_rect = h.get_all_by_role_and_label(Role::TextInput, "Title").next().unwrap().rect();
+    let step = h
+        .query_all_by_role_and_label(Role::Button, "Step up or down")
+        .find(|button| {
+            let rect = button.rect();
+            (rect.center().y - title_rect.center().y).abs() < 2.0 && rect.right() <= title_rect.left() + 1.0
+        })
+        .expect("Title has the Stroke-style stepper");
+    let point = egui::pos2(step.rect().center().x, step.rect().top() + 5.0);
+    h.event(egui::Event::PointerMoved(point));
+    h.event(egui::Event::PointerButton { pos: point, button: egui::PointerButton::Primary, pressed: true, modifiers: egui::Modifiers::SHIFT });
+    h.run_steps(1);
+    h.event(egui::Event::PointerButton { pos: point, button: egui::PointerButton::Primary, pressed: false, modifiers: egui::Modifiers::SHIFT });
+    h.run_steps(2);
+    assert_eq!(
+        h.state().scientific.graph_drafts.get(&key).and_then(|style| style.plot_title_pt),
+        Some(15.25),
+        "one click remains exactly +1 pt even with Shift held"
+    );
+
+    h.get_all_by_role_and_label(Role::Button, "Presets").next().unwrap().click_accesskit();
+    h.run_steps(2);
+    assert!(h.query_by_label("14 pt").is_some(), "font-size preset list uses point values");
+    h.get_by_label("14 pt").click_accesskit();
+    h.run_steps(2);
+    assert_eq!(h.state().scientific.graph_drafts.get(&key).and_then(|style| style.plot_title_pt), Some(14.0));
+    assert!(!egui::Popup::is_any_open(&h.ctx), "selecting a preset closes its popup");
+
+    let title = h.get_all_by_role_and_label(Role::TextInput, "Title").next().unwrap();
+    title.focus();
+    h.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::A);
+    title.type_text("NaN");
+    h.key_press(egui::Key::Enter);
+    h.run_steps(2);
+    let invalid = h.get_all_by_role_and_label(Role::TextInput, "Title").next().unwrap();
+    assert!(invalid.is_focused(), "malformed input remains visible and focused for correction");
+    assert_eq!(invalid.value().as_deref(), Some("NaN"));
+    assert_eq!(h.state().scientific.graph_drafts.get(&key).and_then(|style| style.plot_title_pt), Some(14.0));
+
+    let title = h.get_all_by_role_and_label(Role::TextInput, "Title").next().unwrap();
+    title.focus();
+    h.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::A);
+    title.type_text("14");
+    h.key_press(egui::Key::Enter);
+    h.run_steps(2);
+    assert_eq!(h.state().scientific.graph_drafts.get(&key).and_then(|style| style.plot_title_pt), Some(14.0));
+
+    let title = h.get_all_by_role_and_label(Role::TextInput, "Title").next().unwrap();
+    title.focus();
+    h.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::A);
+    title.type_text("101");
+    h.key_press(egui::Key::Enter);
+    h.run_steps(2);
+    assert_eq!(h.state().scientific.graph_drafts.get(&key).and_then(|style| style.plot_title_pt), Some(101.0));
+    assert!(h.state().scientific.r_status.contains("between 0.1 and 100 pt"), "invalid input is reported and not queued to R");
+    assert_eq!(h.state().scientific.graph_pending.get(&key).map(|request| request.style.plot_title_pt), Some(Some(14.0)));
+
+    let title_rect = h.get_all_by_role_and_label(Role::TextInput, "Title").next().unwrap().rect();
+    h.query_all_by_role_and_label(Role::Button, "Presets")
+        .find(|button| (button.rect().center().y - title_rect.center().y).abs() < 2.0)
+        .expect("Title has the preset and R-default menu")
+        .click_accesskit();
+    h.run_steps(2);
+    h.get_all_by_role_and_label(Role::Button, "R default").next().unwrap().click_accesskit();
+    h.run_steps(2);
+    assert_eq!(h.state().scientific.graph_drafts.get(&key).and_then(|style| style.plot_title_pt), None, "R reset restores inheritance");
 }
 
 #[test]

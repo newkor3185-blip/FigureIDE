@@ -2,6 +2,46 @@
 
 use super::graph_style::{FontFace, GraphStyle, LegendDirection, LegendPosition, TextDetails, TitlePosition};
 use super::{panel_caption, request_graph_apply, selected_linked_panel};
+use vectorcraft_doc::Unit;
+
+const FONT_SIZE_PRESETS_PT: &[f64] = &[6.0, 8.0, 9.0, 10.0, 11.0, 12.0, 14.0, 16.0, 18.0, 20.0, 24.0, 28.0, 36.0, 48.0, 72.0];
+const LINE_WIDTH_PRESETS_PT: &[f64] = &[0.0, 0.25, 0.5, 0.75, 1.0, 1.5, 2.0, 3.0, 4.0, 5.0];
+const GRID_WIDTH_PRESETS_PT: &[f64] = &[0.0, 0.25, 0.5, 0.75, 1.0, 1.5, 2.0];
+
+fn point_value_control(ui: &mut egui::Ui, id: &str, label: &str, value: &mut Option<f64>, min: f64, presets: &[f64]) -> bool {
+    if value.is_none() {
+        ui.weak("R").on_hover_text("R default; uses the linked plot value until you enter an override");
+    }
+    let before = *value;
+    match crate::widgets::spin_field_named_fixed_step(
+        ui,
+        ("graph-point-value", id),
+        Some(label),
+        *value,
+        Some("R default"),
+        Unit::Points,
+        92.0,
+        1.0,
+        min,
+        presets,
+    ) {
+        Some(crate::widgets::SpinPick::Value(next)) if next.is_finite() => *value = Some(next),
+        Some(crate::widgets::SpinPick::Auto) => *value = None,
+        _ => {}
+    }
+    *value != before
+}
+
+fn millimeter_value_control(ui: &mut egui::Ui, id: &str, label: &str, value: &mut Option<f64>, min_mm: f64, presets_pt: &[f64]) -> bool {
+    let mut value_pt = value.map(|mm| Unit::Millimeters.to_pt(mm));
+    let before = *value;
+    // Graph styles retain millimetres for compatibility with existing projects and R theme units;
+    // the shared Stroke control edits and displays point values.
+    if point_value_control(ui, id, label, &mut value_pt, Unit::Millimeters.to_pt(min_mm), presets_pt) {
+        *value = value_pt.map(|pt| Unit::Millimeters.from_pt(pt));
+    }
+    *value != before
+}
 
 fn number_row(ui: &mut egui::Ui, label: &str, value: &mut Option<f64>, suggested: f64, suffix: &str, range: std::ops::RangeInclusive<f64>) -> bool {
     ui.horizontal(|ui| {
@@ -69,7 +109,7 @@ fn string_row(ui: &mut egui::Ui, label: &str, value: &mut Option<String>, sugges
 
 fn face_control(ui: &mut egui::Ui, id: &str, label: &str, labelled_by: egui::Id, value: &mut Option<FontFace>) -> bool {
     let before = *value;
-    let width = ui.available_width().clamp(70.0, 86.0);
+    let width = ui.available_width().clamp(64.0, 76.0);
     egui::ComboBox::from_id_salt(("graph-face", id))
         .width(width)
         .selected_text(value.map_or("R default", FontFace::label))
@@ -200,19 +240,12 @@ struct TextRowSpec<'a> {
     title: bool,
 }
 
-fn basic_text_row(
-    ui: &mut egui::Ui,
-    spec: TextRowSpec<'_>,
-    size: &mut Option<f64>,
-    visible: &mut Option<bool>,
-    details: &mut TextDetails,
-    suggested: f64,
-) -> bool {
+fn basic_text_row(ui: &mut egui::Ui, spec: TextRowSpec<'_>, size: &mut Option<f64>, visible: &mut Option<bool>, details: &mut TextDetails) -> bool {
     ui.horizontal_wrapped(|ui| {
         let (popover, label_response) =
             property_popover_with_response(ui, spec.id, spec.label, |ui| advanced_text(ui, spec.detail_label, details, spec.tick, spec.title));
         let mut committed = popover.unwrap_or(false);
-        committed |= compact_number_control_with_width(ui, size, suggested, " pt", 0.1..=100.0, Some(label_response.id), 64.0);
+        committed |= point_value_control(ui, spec.id, spec.label, size, 0.1, FONT_SIZE_PRESETS_PT);
         committed |= face_control(ui, spec.id, spec.label, label_response.id, &mut details.face);
         committed |= basic_visibility(ui, spec.visibility_label, visible);
         committed
@@ -322,7 +355,7 @@ fn axis_component(ui: &mut egui::Ui, title: &str, id: &str, style: &mut GraphSty
                     changed |= number_row(ui, "Tick length", &mut style.axis_x_tick_length_mm, 1.5, " mm", 0.0..=100.0);
                     changed
                 });
-                committed |= compact_number(ui, "X line width", &mut style.axis_x_line_mm, 0.5, " mm", 0.1..=20.0);
+                committed |= millimeter_value_control(ui, "x-axis-line-width", "X line width", &mut style.axis_x_line_mm, 0.0, LINE_WIDTH_PRESETS_PT);
                 committed |= basic_visibility(ui, "X-axis line visibility", &mut style.axis_x_visible);
             });
             committed |= basic_text_row(
@@ -338,7 +371,6 @@ fn axis_component(ui: &mut egui::Ui, title: &str, id: &str, style: &mut GraphSty
                 &mut style.tick_x_pt,
                 &mut style.tick_x_visible,
                 &mut style.tick_x_details,
-                8.0,
             );
             committed |= basic_text_row(
                 ui,
@@ -353,7 +385,6 @@ fn axis_component(ui: &mut egui::Ui, title: &str, id: &str, style: &mut GraphSty
                 &mut style.axis_title_x_pt,
                 &mut style.axis_title_x_visible,
                 &mut style.axis_title_x_details,
-                10.0,
             );
         } else {
             ui.horizontal_wrapped(|ui| {
@@ -365,7 +396,7 @@ fn axis_component(ui: &mut egui::Ui, title: &str, id: &str, style: &mut GraphSty
                     changed |= number_row(ui, "Tick length", &mut style.axis_y_tick_length_mm, 1.5, " mm", 0.0..=100.0);
                     changed
                 });
-                committed |= compact_number(ui, "Y line width", &mut style.axis_y_line_mm, 0.5, " mm", 0.1..=20.0);
+                committed |= millimeter_value_control(ui, "y-axis-line-width", "Y line width", &mut style.axis_y_line_mm, 0.0, LINE_WIDTH_PRESETS_PT);
                 committed |= basic_visibility(ui, "Y-axis line visibility", &mut style.axis_y_visible);
             });
             committed |= basic_text_row(
@@ -381,7 +412,6 @@ fn axis_component(ui: &mut egui::Ui, title: &str, id: &str, style: &mut GraphSty
                 &mut style.tick_y_pt,
                 &mut style.tick_y_visible,
                 &mut style.tick_y_details,
-                8.0,
             );
             committed |= basic_text_row(
                 ui,
@@ -396,7 +426,6 @@ fn axis_component(ui: &mut egui::Ui, title: &str, id: &str, style: &mut GraphSty
                 &mut style.axis_title_y_pt,
                 &mut style.axis_title_y_visible,
                 &mut style.axis_title_y_details,
-                10.0,
             );
         }
     });
@@ -442,7 +471,6 @@ fn show_selected_graph_settings(app: &mut crate::VectorcraftApp, ui: &mut egui::
                     &mut draft.plot_title_pt,
                     &mut draft.plot_title_visible,
                     &mut draft.title_details,
-                    12.0,
                 );
                 committed |= basic_text_row(
                     ui,
@@ -457,7 +485,6 @@ fn show_selected_graph_settings(app: &mut crate::VectorcraftApp, ui: &mut egui::
                     &mut draft.subtitle_pt,
                     &mut draft.subtitle_visible,
                     &mut draft.subtitle_details,
-                    10.0,
                 );
                 committed |= basic_text_row(
                     ui,
@@ -472,7 +499,6 @@ fn show_selected_graph_settings(app: &mut crate::VectorcraftApp, ui: &mut egui::
                     &mut draft.caption_pt,
                     &mut draft.caption_visible,
                     &mut draft.caption_details,
-                    8.0,
                 );
                 let before = draft.plot_title_position;
                 ui.horizontal_wrapped(|ui| {
@@ -502,7 +528,6 @@ fn show_selected_graph_settings(app: &mut crate::VectorcraftApp, ui: &mut egui::
                     &mut draft.strip_text_pt,
                     &mut draft.strip_text_visible,
                     &mut draft.strip_text_details,
-                    9.0,
                 );
             });
             crate::widgets::divider(ui);
@@ -543,7 +568,6 @@ fn show_selected_graph_settings(app: &mut crate::VectorcraftApp, ui: &mut egui::
                     &mut draft.legend_title_pt,
                     &mut draft.legend_title_visible,
                     &mut draft.legend_title_details,
-                    10.0,
                 );
                 committed |= basic_text_row(
                     ui,
@@ -558,7 +582,6 @@ fn show_selected_graph_settings(app: &mut crate::VectorcraftApp, ui: &mut egui::
                     &mut draft.legend_text_pt,
                     &mut draft.legend_text_visible,
                     &mut draft.legend_text_details,
-                    8.0,
                 );
                 ui.horizontal_wrapped(|ui| {
                     let (popover, key_label) = property_popover_with_response(ui, "legend-key", "Key", |ui| {
@@ -592,25 +615,39 @@ fn show_selected_graph_settings(app: &mut crate::VectorcraftApp, ui: &mut egui::
             crate::widgets::divider(ui);
             egui::CollapsingHeader::new("Plot").id_salt(("graph-component", "plot")).default_open(true).show(ui, |ui| {
                 ui.horizontal_wrapped(|ui| {
-                    let (popover, label_response) = property_popover_with_response(ui, "major-grid", "Major grid", |ui| {
+                    let (popover, _label_response) = property_popover_with_response(ui, "major-grid", "Major grid", |ui| {
                         let mut changed = string_row(ui, "Grid colour", &mut draft.major_grid_colour, "grey85");
                         changed |= visibility_row(ui, "X major grid", &mut draft.major_grid_x_visible);
                         changed |= visibility_row(ui, "Y major grid", &mut draft.major_grid_y_visible);
                         changed
                     });
                     committed |= popover.unwrap_or(false);
-                    committed |= compact_number_control(ui, &mut draft.major_grid_width_mm, 0.2, " mm", 0.01..=20.0, Some(label_response.id));
+                    committed |= millimeter_value_control(
+                        ui,
+                        "major-grid-width",
+                        "Major grid width",
+                        &mut draft.major_grid_width_mm,
+                        0.0,
+                        GRID_WIDTH_PRESETS_PT,
+                    );
                     committed |= basic_visibility(ui, "Major grid visibility", &mut draft.major_grid_visible);
                 });
                 ui.horizontal_wrapped(|ui| {
-                    let (popover, label_response) = property_popover_with_response(ui, "minor-grid", "Minor grid", |ui| {
+                    let (popover, _label_response) = property_popover_with_response(ui, "minor-grid", "Minor grid", |ui| {
                         let mut changed = string_row(ui, "Grid colour", &mut draft.minor_grid_colour, "grey90");
                         changed |= visibility_row(ui, "X minor grid", &mut draft.minor_grid_x_visible);
                         changed |= visibility_row(ui, "Y minor grid", &mut draft.minor_grid_y_visible);
                         changed
                     });
                     committed |= popover.unwrap_or(false);
-                    committed |= compact_number_control(ui, &mut draft.minor_grid_width_mm, 0.1, " mm", 0.01..=20.0, Some(label_response.id));
+                    committed |= millimeter_value_control(
+                        ui,
+                        "minor-grid-width",
+                        "Minor grid width",
+                        &mut draft.minor_grid_width_mm,
+                        0.0,
+                        GRID_WIDTH_PRESETS_PT,
+                    );
                     committed |= basic_grid_visibility(ui, "Minor grid visibility", &mut draft.minor_grid_x_visible, &mut draft.minor_grid_y_visible);
                 });
                 property_popover(ui, "plot-options", "Plot options", |ui| {

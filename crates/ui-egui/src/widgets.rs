@@ -417,7 +417,13 @@ fn unit_field(
     let commit = commit && buf != shown;
     ui.data_mut(|d| d.insert_temp(id, buf.clone()));
     if commit {
-        read(&buf).or_else(|| if share_of_value { share_of(&decimal_point(&buf), value?) } else { None })
+        let parsed = read(&buf).or_else(|| if share_of_value { share_of(&decimal_point(&buf), value?) } else { None });
+        if parsed.is_none() {
+            // Keep malformed text visible and focused so a bad edit is never silently replaced by
+            // the last valid value when Enter or focus loss attempts to commit it.
+            ui.memory_mut(|memory| memory.request_focus(resp.id));
+        }
+        parsed
     } else {
         stepped.or(scrubbed).map(|v| unit.to_pt(v))
     }
@@ -1890,6 +1896,38 @@ pub fn spin_field_named(
     spin_field_auto_named(ui, id, name, value, None, unit, width, step, min, presets).and_then(SpinPick::value)
 }
 
+/// [`spin_field_named`] with a fixed spinner increment, an optional inherit entry, and no keyboard
+/// modifier scaling. Typed values are returned unchanged so callers can report invalid input.
+#[allow(clippy::too_many_arguments)]
+pub fn spin_field_named_fixed_step(
+    ui: &mut Ui,
+    id: impl std::hash::Hash + Copy,
+    name: Option<&str>,
+    value: Option<f64>,
+    inherit_label: Option<&str>,
+    unit: Unit,
+    width: f32,
+    step: f64,
+    min: f64,
+    presets: &[f64],
+) -> Option<SpinPick> {
+    let label = take_previous_label(ui);
+    spin_generic(
+        ui,
+        label,
+        value,
+        inherit_label.map(|_| value.is_none()),
+        inherit_label,
+        width,
+        step,
+        min,
+        presets,
+        false,
+        &|v| unit.format(v),
+        &mut |ui, fw, label| unit_field(ui, id, label, name, value, unit, fw, false, min..=f64::INFINITY),
+    )
+}
+
 /// What a [`spin_field_auto`] returns: a value (points), or its Auto entry.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum SpinPick {
@@ -1939,7 +1977,7 @@ pub fn spin_field_auto_named(
     presets: &[f64],
 ) -> Option<SpinPick> {
     let label = take_previous_label(ui);
-    spin_generic(ui, label, value, auto, width, step, min, presets, &|v| unit.format(v), &mut |ui, fw, label| {
+    spin_generic(ui, label, value, auto, auto.map(|_| tl!("Auto")), width, step, min, presets, true, &|v| unit.format(v), &mut |ui, fw, label| {
         unit_field(ui, id, label, name, value, unit, fw, false, min..=f64::INFINITY)
     })
 }
@@ -1978,7 +2016,7 @@ pub fn spin_plain_named(
     let label = take_previous_label(ui);
     let value = value.into();
     let fmt = |v: f64| format!("{v}{suffix}");
-    spin_generic(ui, label, value, None, width, step, min, presets, &fmt, &mut |ui, fw, label| {
+    spin_generic(ui, label, value, None, None, width, step, min, presets, true, &fmt, &mut |ui, fw, label| {
         bounded_field(ui, id, label, name, value, suffix, decimals, fw, &(min..=f64::INFINITY), None)
     })
     .and_then(SpinPick::value)
@@ -1992,10 +2030,12 @@ fn spin_generic(
     label: Option<PreviousLabel>,
     value: Option<f64>,
     auto: Option<bool>,
+    auto_label: Option<&str>,
     width: f32,
     step: f64,
     min: f64,
     presets: &[f64],
+    fixed_step: bool,
     fmt: &dyn Fn(f64) -> String,
     field: &mut SpinField<'_>,
 ) -> Option<SpinPick> {
@@ -2032,28 +2072,39 @@ fn spin_generic(
             && let Some(v) = value
         {
             let modifiers = ui.input(|i| i.modifiers);
-            out = Some(SpinPick::Value(spinner_step(v, step, min, up.contains(p), modifiers)));
+            let stepped = if fixed_step {
+                (v + if up.contains(p) { step } else { -step }).max(min)
+            } else {
+                spinner_step(v, step, min, up.contains(p), modifiers)
+            };
+            out = Some(SpinPick::Value(stepped));
         }
         let fw = if presets.is_empty() { width - 15.0 } else { width - 34.0 };
         if let Some(v) = field(ui, fw, label) {
-            out = Some(SpinPick::Value(v.max(min)));
+            out = Some(SpinPick::Value(if fixed_step { v } else { v.max(min) }));
         }
         if !presets.is_empty() {
             let dresp = chevron_cell(ui, h);
+            let mut picked = false;
             egui::Popup::menu(&dresp).show(|ui| {
                 ui.set_min_width(width - 10.0);
                 if let Some(on) = auto
-                    && ui.selectable_label(on, tl!("Auto")).clicked()
+                    && ui.selectable_label(on, auto_label.unwrap_or(tl!("Auto"))).clicked()
                 {
                     out = Some(SpinPick::Auto);
+                    picked = true;
                 }
                 let current = value.filter(|_| auto != Some(true));
                 for p in presets {
                     if ui.selectable_label(current.is_some_and(|v| (v - p).abs() < 1e-6), fmt(*p)).clicked() {
                         out = Some(SpinPick::Value(*p));
+                        picked = true;
                     }
                 }
             });
+            if picked {
+                egui::Popup::close_id(ui.ctx(), egui::Popup::default_response_id(&dresp));
+            }
         }
     });
     out
