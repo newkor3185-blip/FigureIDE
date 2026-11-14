@@ -60,6 +60,7 @@ jobs:
             libwayland-dev libx11-dev libxcb1-dev libxcursor-dev libxrandr-dev libxi-dev \
             libfontconfig1-dev libfreetype-dev libgl1-mesa-dev mesa-vulkan-drivers \
             r-base r-cran-ggplot2 r-cran-svglite r-cran-systemfonts
+          echo "R_LIBS_SITE=/usr/lib/R/site-library" >> "$GITHUB_ENV"
 
       - name: Check R plotting dependencies
         run: |
