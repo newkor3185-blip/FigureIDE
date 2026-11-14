@@ -42,18 +42,46 @@ mod tests {
         app
     }
 
+    fn workflow_job(workflow: &str, name: &str) -> String {
+        let heading = format!("  {name}:");
+        let mut in_job = false;
+        let mut lines = Vec::new();
+
+        for line in workflow.lines() {
+            if !in_job {
+                if line == heading {
+                    in_job = true;
+                    lines.push(line);
+                }
+                continue;
+            }
+
+            let is_next_job = line.starts_with("  ")
+                && !line.starts_with("    ")
+                && line.ends_with(':')
+                && line[2..line.len() - 1].chars().all(|character| character.is_ascii_lowercase() || character == '-');
+            if is_next_job {
+                break;
+            }
+            lines.push(line);
+        }
+
+        assert!(!lines.is_empty(), "Release workflow is missing job {name:?}");
+        lines.join("\n")
+    }
+
     // 1. Windows EXE packaging structure
     #[test]
     fn test_windows_exe_packaging() {
         let temp = TempTestDir::new("pkg");
-        let pkg_root = temp.path().join("FigureIDE-v0.1.0-beta.1-Windows-x64");
+        let pkg_root = temp.path().join("FigureIDE-v0.2.0-beta.1-Windows-x64");
         let inner = pkg_root.join("FigureIDE");
         fs::create_dir_all(&inner).unwrap();
 
         fs::write(inner.join("FigureIDE.exe"), b"MOCK_EXE_BINARY").unwrap();
         fs::write(inner.join("README.txt"), b"FigureIDE Portable").unwrap();
         fs::write(inner.join("LICENSE.txt"), b"MIT / Apache-2.0").unwrap();
-        fs::write(inner.join("BUILD_INFO.txt"), b"commit=12345678\nversion=0.1.0-beta.1").unwrap();
+        fs::write(inner.join("BUILD_INFO.txt"), b"commit=12345678\nversion=0.2.0-beta.1").unwrap();
         fs::write(inner.join("register-fide-association.cmd"), b"@echo off\nassoc .fide=FigureIDE.Figure").unwrap();
 
         assert!(inner.join("FigureIDE.exe").is_file());
@@ -252,24 +280,55 @@ mod tests {
         let content = fs::read_to_string(wf_path).unwrap();
         assert!(content.contains("workflow_dispatch:"), "Workflow must allow manual dispatch");
         assert!(content.contains("upload-artifact"), "Workflow must upload ZIP artifact");
-        assert!(content.contains("FigureIDE-") || content.contains("RVectorStudio-"), "Workflow must name archive properly");
+        assert!(content.contains("FigureIDE-$archiveVersion-Windows-x64"), "Workflow must name the FigureIDE archive");
     }
 
-    // 11. Tagged-release trigger logic
+    // 11. Coordinated multi-platform tagged-release logic
     #[test]
     fn test_tagged_release_trigger_logic() {
-        let wf_path = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../.github/workflows/rvs-windows-release.yml");
-        let content = fs::read_to_string(wf_path).unwrap();
+        let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let release_workflow = fs::read_to_string(root.join(".github/workflows/figureide-multiplatform-release.yml")).unwrap();
+        let windows_workflow = fs::read_to_string(root.join(".github/workflows/rvs-windows-release.yml")).unwrap();
 
-        assert!(content.contains("rvs-v*") || content.contains("figureide-v*") || content.contains("v*"), "Workflow push trigger must match tags");
-        assert!(content.contains("gh release create"), "Workflow must use gh release create for tagged releases");
-        assert!(
-            content.contains("startsWith(github.ref, 'refs/tags/rvs-v')")
-                || content.contains("startsWith(github.ref, 'refs/tags/figureide-v')")
-                || content.contains("startsWith(github.ref, 'refs/tags/v')")
-                || content.contains("startsWith(github.ref, 'refs/tags/')"),
-            "Release creation must be conditioned on tag"
-        );
+        assert!(release_workflow.contains("  workflow_dispatch:\n"), "Coordinated release workflow must support manual dispatch");
+        assert!(release_workflow.contains("      draft_release:\n") && release_workflow.contains("        default: false"));
+
+        let windows_job = workflow_job(&release_workflow, "windows");
+        let linux_job = workflow_job(&release_workflow, "linux");
+        let macos_job = workflow_job(&release_workflow, "macos");
+        for (job, workflow) in
+            [(&windows_job, "rvs-windows-release.yml"), (&linux_job, "figureide-linux-release.yml"), (&macos_job, "figureide-macos.yml")]
+        {
+            assert!(job.contains(&format!("uses: ./.github/workflows/{workflow}")), "Missing reusable platform workflow {workflow}");
+            assert!(job.contains("release_version: ${{ needs.prepare.outputs.version }}"), "Platform packages must share one release version");
+            assert!(job.contains("source_sha: ${{ needs.prepare.outputs.source_sha }}"), "Platform builds must use the approved source SHA");
+        }
+
+        let validation_job = workflow_job(&release_workflow, "collect-and-validate");
+        assert!(validation_job.contains("needs: [prepare, windows, linux, macos]"), "Validation must wait for every platform build");
+        for artifact in ["FigureIDE-Windows-x64", "FigureIDE-Linux-x86_64", "FigureIDE-macOS-AppleSilicon", "FigureIDE-macOS-Intel"] {
+            assert!(validation_job.contains(artifact), "Validation must collect {artifact}");
+        }
+        assert!(validation_job.contains("scripts/validate_figureide_release.py"), "All packages must pass archive validation");
+        assert!(validation_job.contains("--commit \"$SOURCE_SHA\""), "Archive validation must compare every package to the same source SHA");
+        assert!(validation_job.contains("SHA256SUMS"), "Validation must generate checksums before draft publication");
+
+        let prepare_job = workflow_job(&release_workflow, "prepare");
+        assert!(prepare_job.contains("tag_name=\"figureide-v$REQUESTED_VERSION\""), "Only the FigureIDE version tag is a release tag");
+        assert!(prepare_job.contains("echo \"source_sha=$source_sha\""), "The release workflow must pin the approved source commit");
+        assert!(prepare_job.contains("GITHUB_REF_TYPE\" != tag") && prepare_job.contains("GITHUB_REF_NAME\" != \"$tag_name\""));
+        assert!(prepare_job.contains("DRAFT_RELEASE\" == true"), "Draft publication must be explicitly requested");
+
+        let draft_job = workflow_job(&release_workflow, "draft-release");
+        assert!(draft_job.contains("github.event_name == 'workflow_dispatch' && inputs.draft_release"));
+        assert!(draft_job.contains("needs: [prepare, collect-and-validate]"), "Draft creation must wait for successful validation");
+        assert!(draft_job.contains("gh release create"), "The coordinated workflow must create the optional draft release");
+        assert!(draft_job.contains("--draft --prerelease"), "Automated release creation must remain an unpublished draft");
+        assert!(draft_job.contains("contents: write"), "Only the draft publishing job needs release write access");
+        assert!(draft_job.contains("Refusing to modify published release"), "A published release must never be overwritten");
+
+        assert!(!windows_workflow.contains("gh release create"), "Windows packaging must not publish releases");
+        assert!(!windows_workflow.contains("gh release edit"), "Windows packaging must not modify releases");
     }
 
     // 12. Portable extraction
@@ -277,22 +336,22 @@ mod tests {
     fn test_portable_extraction() {
         let temp = TempTestDir::new("extract");
         let staged_root = temp.path().join("staged_release");
-        let app_folder = staged_root.join("RVectorStudio");
+        let app_folder = staged_root.join("FigureIDE");
         fs::create_dir_all(&app_folder).unwrap();
 
-        fs::write(app_folder.join("RVectorStudio.exe"), b"PORTABLE_EXE").unwrap();
+        fs::write(app_folder.join("FigureIDE.exe"), b"PORTABLE_EXE").unwrap();
         fs::write(app_folder.join("README.txt"), b"FigureIDE Portable Distribution").unwrap();
 
         // Simulate portable relocation to a completely different path
         let target_dir = temp.path().join("user_extracted_location");
         fs::create_dir_all(&target_dir).unwrap();
-        let target_app = target_dir.join("RVectorStudio");
+        let target_app = target_dir.join("FigureIDE");
         fs::create_dir_all(&target_app).unwrap();
 
-        fs::copy(app_folder.join("RVectorStudio.exe"), target_app.join("RVectorStudio.exe")).unwrap();
+        fs::copy(app_folder.join("FigureIDE.exe"), target_app.join("FigureIDE.exe")).unwrap();
         fs::copy(app_folder.join("README.txt"), target_app.join("README.txt")).unwrap();
 
-        assert!(target_app.join("RVectorStudio.exe").is_file());
+        assert!(target_app.join("FigureIDE.exe").is_file());
         assert!(target_app.join("README.txt").is_file());
         let readme = fs::read_to_string(target_app.join("README.txt")).unwrap();
         assert!(readme.contains("FigureIDE Portable"));

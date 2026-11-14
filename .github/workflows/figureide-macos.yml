@@ -22,6 +22,14 @@ on:
       - 'ASSETS.md'
       - 'about.hbs'
   workflow_dispatch:
+  workflow_call:
+    inputs:
+      release_version:
+        required: true
+        type: string
+      source_sha:
+        required: true
+        type: string
 
 permissions:
   contents: read
@@ -54,6 +62,29 @@ jobs:
     steps:
       - name: Check out FigureIDE
         uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.source_sha || github.sha }}
+
+      - name: Verify source commit and release version
+        env:
+          RELEASE_VERSION: ${{ inputs.release_version }}
+          EXPECTED_SOURCE_SHA: ${{ inputs.source_sha }}
+        run: |
+          set -euo pipefail
+          actual_sha="$(git rev-parse HEAD)"
+          if [[ -n "$EXPECTED_SOURCE_SHA" && "$actual_sha" != "$EXPECTED_SOURCE_SHA" ]]; then
+            echo "checked out $actual_sha, expected $EXPECTED_SOURCE_SHA" >&2
+            exit 1
+          fi
+          manifest_version="$(awk '/^\[workspace\.package\]/{p=1;next} /^\[/{p=0} p && $1=="version"{gsub(/[" ]/,"",$3);print $3;exit}' Cargo.toml)"
+          if [[ -n "$RELEASE_VERSION" && "$manifest_version" != "$RELEASE_VERSION" ]]; then
+            echo "release version $RELEASE_VERSION does not match Cargo version $manifest_version" >&2
+            exit 1
+          fi
+          {
+            echo "SOURCE_COMMIT=$actual_sha"
+            echo "MANIFEST_VERSION=$manifest_version"
+          } >> "$GITHUB_ENV"
 
       - name: Check out pinned craft-fonts
         uses: actions/checkout@v4
@@ -82,6 +113,7 @@ jobs:
           mkdir -p "$R_LIBS_USER"
           Rscript -e 'install.packages(c("ggplot2", "svglite", "systemfonts"), lib=Sys.getenv("R_LIBS_USER"), repos="https://cloud.r-project.org")'
           R_LIBS_USER="$R_LIBS_USER" Rscript -e 'stopifnot(requireNamespace("ggplot2", quietly=TRUE), requireNamespace("svglite", quietly=TRUE), requireNamespace("systemfonts", quietly=TRUE)); cat(R.version.string, "\n")'
+          R_LIBS_USER="$R_LIBS_USER" Rscript -e 'svg <- tempfile(fileext=".svg"); svglite::svglite(svg, width=7, height=5); print(ggplot2::ggplot(iris, ggplot2::aes(Sepal.Length, Sepal.Width, colour=Species)) + ggplot2::geom_point()); grDevices::dev.off(); text <- paste(readLines(svg), collapse="\n"); stopifnot(grepl("<svg", text, fixed=TRUE), nchar(text) > 200); unlink(svg)'
 
       - name: Check formatting
         run: cargo fmt --all --check
@@ -98,6 +130,9 @@ jobs:
       - name: R and ggplot2 FigureIDE integration test
         run: cargo test --locked -p vectorcraft-ui-egui --lib --target ${{ matrix.target }} ggplot_objects_are_discovered_and_rendered_as_vector_svg
 
+      - name: Graph Inspector regression tests
+        run: cargo test --locked -p vectorcraft-ui-egui --lib --target ${{ matrix.target }} r_workspace_stage4_inspector_
+
       - name: Build FigureIDE
         run: cargo build --locked --release -p vectorcraft --target ${{ matrix.target }}
 
@@ -109,12 +144,15 @@ jobs:
           test -s target/THIRD-PARTY-LICENSES.md
 
       - name: Assemble and validate FigureIDE.app
+        env:
+          FIGUREIDE_RELEASE_VERSION: ${{ inputs.release_version }}
+          VECTORCRAFT_BUILD_SHA: ${{ inputs.source_sha || github.sha }}
         run: DIST=dist packaging/figureide-macos/package.sh ${{ matrix.package_arch }}
 
       - name: Upload macOS ZIP
         uses: actions/upload-artifact@v4
         with:
           name: FigureIDE-macOS-${{ matrix.artifact }}
-          path: dist/FigureIDE-macOS-${{ matrix.artifact }}.zip
+          path: ${{ inputs.release_version && format('dist/FigureIDE-v{0}-macOS-{1}.zip', inputs.release_version, matrix.artifact) || format('dist/FigureIDE-macOS-{0}.zip', matrix.artifact) }}
           if-no-files-found: error
           retention-days: 14

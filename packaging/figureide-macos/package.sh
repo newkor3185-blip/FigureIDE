@@ -22,6 +22,12 @@ case "${1:-}" in
     ;;
 esac
 
+if [[ -n "${FIGUREIDE_RELEASE_VERSION:-}" && "$FIGUREIDE_RELEASE_VERSION" != "$VERSION" ]]; then
+  echo "release version $FIGUREIDE_RELEASE_VERSION does not match Cargo version $VERSION" >&2
+  exit 1
+fi
+BUILD_DATE="${VECTORCRAFT_BUILD_DATE:-$(date -u +%Y-%m-%dT%H:%M:%SZ)}"
+
 BIN="$CARGO_TARGET_DIR/$TARGET/release/vectorcraft"
 LICENSE_REPORT="$CARGO_TARGET_DIR/THIRD-PARTY-LICENSES.md"
 if [[ ! -x "$BIN" ]]; then
@@ -35,7 +41,11 @@ fi
 
 WORK="$CARGO_TARGET_DIR/figureide-macos-package/$ARTIFACT_ARCH"
 APP="$DIST/FigureIDE.app"
-ZIP="$DIST/FigureIDE-macOS-$ARTIFACT_ARCH.zip"
+if [[ -n "${FIGUREIDE_RELEASE_VERSION:-}" ]]; then
+  ZIP="$DIST/FigureIDE-v$VERSION-macOS-$ARTIFACT_ARCH.zip"
+else
+  ZIP="$DIST/FigureIDE-macOS-$ARTIFACT_ARCH.zip"
+fi
 RESOURCES="$APP/Contents/Resources"
 ICONSET="$WORK/FigureIDE.iconset"
 ICON_SOURCE="$ROOT/assets/app-icon/figureide-app-icon.png"
@@ -65,6 +75,12 @@ python3 "$ROOT/packaging/figureide-macos/make_info.py" "$ROOT/packaging/macos/In
 
 install -m 644 "$LICENSE_REPORT" "$RESOURCES/THIRD-PARTY-LICENSES.md"
 copy_docs "$RESOURCES"
+cat >"$RESOURCES/BUILD_INFO.txt" <<EOF
+version=$VERSION
+commit=$VECTORCRAFT_BUILD_SHA
+build_date=$BUILD_DATE
+target=$TARGET
+EOF
 while IFS= read -r -d '' license; do
   relative="${license#"$ROOT/assets/"}"
   destination="$RESOURCES/asset-licenses/$relative"
@@ -98,11 +114,17 @@ plutil -lint "$APP/Contents/Info.plist"
 [[ "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIconFile' "$APP/Contents/Info.plist")" == "FigureIDE" ]]
 [[ -x "$APP/Contents/MacOS/FigureIDE" ]]
 [[ -s "$RESOURCES/FigureIDE.icns" ]]
-[[ -s "$RESOURCES/LICENSE-MIT" && -s "$RESOURCES/LICENSE-APACHE" && -s "$RESOURCES/NOTICE" ]]
+[[ -s "$RESOURCES/LICENSE-MIT" && -s "$RESOURCES/LICENSE-APACHE" && -s "$RESOURCES/NOTICE" && -s "$RESOURCES/ASSETS.md" ]]
+[[ -s "$RESOURCES/THIRD-PARTY-LICENSES.md" && -s "$RESOURCES/BUILD_INFO.txt" ]]
+[[ -n "$(find "$RESOURCES/asset-licenses" -type f -print -quit)" ]]
+[[ "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$APP/Contents/Info.plist")" == "${VERSION%%-*}" ]]
+[[ "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$APP/Contents/Info.plist")" == "${VERSION%%-*}" ]]
+[[ "$(/usr/libexec/PlistBuddy -c 'Print :FigureIDEVersion' "$APP/Contents/Info.plist")" == "$VERSION" ]]
 lipo "$APP/Contents/MacOS/FigureIDE" -verify_arch "$MACH_ARCH"
 codesign --force --deep --sign - "$APP"
 codesign --verify --deep --strict "$APP"
-"$APP/Contents/MacOS/FigureIDE" --version
+REPORTED_VERSION="$("$APP/Contents/MacOS/FigureIDE" --version)"
+[[ "$REPORTED_VERSION" == "FigureIDE $VERSION" ]]
 
 rm -f "$ZIP"
 ditto -c -k --sequesterRsrc --keepParent "$APP" "$ZIP"
@@ -111,3 +133,6 @@ unzip -l "$ZIP" | grep -Fq 'FigureIDE.app/Contents/MacOS/FigureIDE'
 unzip -l "$ZIP" | grep -Fq 'FigureIDE.app/Contents/Resources/THIRD-PARTY-LICENSES.md'
 echo "wrote $ZIP"
 ls -lh "$ZIP"
+if [[ -n "${GITHUB_ENV:-}" ]]; then
+  printf 'FIGUREIDE_MACOS_ZIP=%s\n' "$ZIP" >>"$GITHUB_ENV"
+fi
