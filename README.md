@@ -28,6 +28,22 @@ Watch FigureIDE in action — from R/ggplot2 visualization to scientific figure 
 - **Optional R workspace snapshots:** save `.GlobalEnv` into `workspace/workspace.RData` and explicitly load it later.
 - **SVG/PDF exports:** aimed at publication workflows; verify final artwork in your target journal/export viewer.
 
+## FigureIDE v0.2.0-beta.1 downloads
+
+This is an early public beta. Release assets become available after the multi-platform build and
+archive checks pass. The release process validates that every archive contains the same source
+commit and publishes only a draft until it is explicitly reviewed and published.
+
+| Platform | Package | Download |
+|---|---|---|
+| Windows x64 | Portable ZIP | [FigureIDE-v0.2.0-beta.1-Windows-x64.zip](https://github.com/newkor3185-blip/FigureIDE/releases/download/figureide-v0.2.0-beta.1/FigureIDE-v0.2.0-beta.1-Windows-x64.zip) |
+| Linux x86_64 | Portable tar.gz | [FigureIDE-v0.2.0-beta.1-Linux-x86_64.tar.gz](https://github.com/newkor3185-blip/FigureIDE/releases/download/figureide-v0.2.0-beta.1/FigureIDE-v0.2.0-beta.1-Linux-x86_64.tar.gz) |
+| macOS Apple Silicon | App ZIP | [FigureIDE-v0.2.0-beta.1-macOS-AppleSilicon.zip](https://github.com/newkor3185-blip/FigureIDE/releases/download/figureide-v0.2.0-beta.1/FigureIDE-v0.2.0-beta.1-macOS-AppleSilicon.zip) |
+| macOS Intel | App ZIP | [FigureIDE-v0.2.0-beta.1-macOS-Intel.zip](https://github.com/newkor3185-blip/FigureIDE/releases/download/figureide-v0.2.0-beta.1/FigureIDE-v0.2.0-beta.1-macOS-Intel.zip) |
+
+All four packages include `LICENSE-MIT`, `LICENSE-APACHE`, `NOTICE`, `ASSETS.md`, dependency
+license notices, and bundled asset license texts. Verify downloads with the release's `SHA256SUMS`.
+
 ## Project layout
 
 ```text
@@ -46,7 +62,7 @@ A **project** is a directory; an individual editable **figure** is a `.fide` fil
 
 ## Install (Windows)
 
-1. Open [Releases](https://github.com/newkor3185-blip/FigureIDE/releases) and download a Windows x64 portable ZIP **when a verified release is available**.
+1. Open [Releases](https://github.com/newkor3185-blip/FigureIDE/releases) and download `FigureIDE-v0.2.0-beta.1-Windows-x64.zip` when the prerelease is published.
 2. Extract it to a local folder and start `FigureIDE.exe`.
 3. R is optional. Install it separately only if you want to run analysis scripts, manage an R workspace, or re-render R-linked figures. Vector editing, saving `.fide` files, and ordinary SVG/PDF export work without R.
 
@@ -71,15 +87,11 @@ R and user-installed R packages are **not bundled** with the portable ZIP. Saved
 
 ## Install (macOS)
 
-The [FigureIDE macOS workflow](.github/workflows/figureide-macos.yml) builds separate Apple Silicon
-and Intel `.app` bundles on native GitHub-hosted runners. Pull request runs and manual runs upload
-`FigureIDE-macOS-AppleSilicon.zip` and `FigureIDE-macOS-Intel.zip` as Actions artifacts. These are
-development artifacts, not GitHub Releases.
-
-Download the ZIP for your Mac from the workflow run's Artifacts section, unzip it, and move
-`FigureIDE.app` to Applications. R is optional for vector editing, `.fide` files, and normal SVG/PDF
-export. To run R scripts or refresh linked plots, install R from [CRAN](https://cran.r-project.org/bin/macosx/)
-or Homebrew (`brew install r`), then install packages from R:
+Download the matching Apple Silicon or Intel ZIP from [Releases](https://github.com/newkor3185-blip/FigureIDE/releases),
+unzip it, and move `FigureIDE.app` to Applications. Pull request and manual build runs also expose
+architecture-specific development ZIPs as Actions artifacts. R is optional for vector editing,
+`.fide` files, and normal SVG/PDF export. To run R scripts or refresh linked plots, install R from
+[CRAN](https://cran.r-project.org/bin/macosx/) or Homebrew (`brew install r`), then install packages from R:
 
 ```r
 install.packages(c("ggplot2", "svglite", "systemfonts"), repos = "https://cloud.r-project.org")
@@ -128,9 +140,10 @@ tested on Ubuntu 26.04 LTS in XFCE over XRDP. XRDP selected Mesa llvmpipe softwa
 does not validate GPU acceleration. See [Linux validation and limitations](docs/figureide-linux.md)
 for the exact checks and outstanding items.
 
-The manually run [FigureIDE Linux workflow](.github/workflows/figureide-linux-release.yml) builds a
-portable archive as a GitHub Actions artifact. It does not publish a GitHub Release. To build locally
-on Ubuntu or a compatible x86_64 Linux system, install the compiler and native development headers:
+Download `FigureIDE-v0.2.0-beta.1-Linux-x86_64.tar.gz` from [Releases](https://github.com/newkor3185-blip/FigureIDE/releases),
+extract it, and run `./FigureIDE`. The manually run [FigureIDE Linux workflow](.github/workflows/figureide-linux-release.yml)
+also keeps a development archive as an Actions artifact. To build locally on Ubuntu or a compatible
+x86_64 Linux system, install the compiler and native development headers:
 
 ```sh
 sudo apt update

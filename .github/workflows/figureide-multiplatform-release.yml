@@ -1,0 +1,257 @@
+name: FigureIDE Multi-Platform Release
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/figureide-multiplatform-release.yml'
+      - '.github/workflows/rvs-windows-release.yml'
+      - '.github/workflows/figureide-linux-release.yml'
+      - '.github/workflows/figureide-macos.yml'
+      - 'packaging/**'
+      - 'scripts/validate_figureide_release.py'
+      - 'Cargo.toml'
+      - 'Cargo.lock'
+      - 'README.md'
+      - 'docs/releases/**'
+      - 'apps/vectorcraft/**'
+      - 'crates/**'
+      - 'assets/**'
+      - 'licenses/**'
+      - 'LICENSE-MIT'
+      - 'LICENSE-APACHE'
+      - 'NOTICE'
+      - 'ASSETS.md'
+      - 'about.hbs'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Expected application/Cargo version'
+        required: true
+        default: '0.2.0-beta.1'
+        type: string
+      source_ref:
+        description: 'Approved source branch, tag, or commit (default: current workflow ref)'
+        required: false
+        type: string
+      draft_release:
+        description: 'Create or update the prerelease draft after all four packages validate (requires the exact version tag)'
+        required: true
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+
+concurrency:
+  group: figureide-beta-${{ inputs.version || github.event.pull_request.head.sha || github.sha }}
+  cancel-in-progress: false
+
+jobs:
+  prepare:
+    name: Approve source and version
+    runs-on: ubuntu-24.04
+    outputs:
+      source_sha: ${{ steps.source.outputs.source_sha }}
+      version: ${{ steps.source.outputs.version }}
+      tag_name: ${{ steps.source.outputs.tag_name }}
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || inputs.source_ref || github.sha }}
+          fetch-depth: 0
+
+      - name: Validate source ref and version
+        id: source
+        env:
+          REQUESTED_VERSION: ${{ inputs.version || '0.2.0-beta.1' }}
+          REQUESTED_SOURCE_REF: ${{ inputs.source_ref }}
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          PR_HEAD_REPO: ${{ github.event.pull_request.head.repo.full_name }}
+          DRAFT_RELEASE: ${{ inputs.draft_release }}
+        run: |
+          set -euo pipefail
+          source_sha="$(git rev-parse HEAD)"
+          tag_name="figureide-v$REQUESTED_VERSION"
+          manifest_version="$(awk '/^\[workspace\.package\]/{p=1;next} /^\[/{p=0} p && $1=="version"{gsub(/[" ]/,"",$3);print $3;exit}' Cargo.toml)"
+          if [[ "$REQUESTED_VERSION" != "$manifest_version" ]]; then
+            echo "Requested version $REQUESTED_VERSION does not match Cargo.toml $manifest_version." >&2
+            exit 1
+          fi
+          if [[ -n "$PR_HEAD_SHA" ]]; then
+            if [[ "$source_sha" != "$PR_HEAD_SHA" ]]; then
+              echo "Pull request source checkout does not match its head SHA." >&2
+              exit 1
+            fi
+          elif [[ "$GITHUB_EVENT_NAME" == workflow_dispatch ]]; then
+            if [[ "$GITHUB_REF_TYPE" == tag ]]; then
+              if [[ "$GITHUB_REF_NAME" != "$tag_name" || "$source_sha" != "$(git rev-parse "refs/tags/$tag_name^{commit}")" ]]; then
+                echo "A release draft can only use the exact FigureIDE tag $tag_name." >&2
+                exit 1
+              fi
+            elif [[ "$GITHUB_REF" == "refs/heads/release/figureide-v$REQUESTED_VERSION" ]]; then
+              if [[ -n "$REQUESTED_SOURCE_REF" && "$REQUESTED_SOURCE_REF" != "$GITHUB_REF_NAME" && "$REQUESTED_SOURCE_REF" != "$source_sha" ]]; then
+                echo "The source ref must be this release-preparation branch or its exact SHA." >&2
+                exit 1
+              fi
+            elif [[ "$GITHUB_REF" == refs/heads/main ]]; then
+              git fetch --no-tags origin main
+              git merge-base --is-ancestor "$source_sha" FETCH_HEAD || {
+                echo "The selected source commit is not on main." >&2
+                exit 1
+              }
+              if [[ -n "$REQUESTED_SOURCE_REF" && "$REQUESTED_SOURCE_REF" != main && "$REQUESTED_SOURCE_REF" != refs/heads/main && "$REQUESTED_SOURCE_REF" != "$source_sha" ]]; then
+                echo "Dispatch from main may select only main or an exact main commit SHA." >&2
+                exit 1
+              fi
+            else
+              echo "Dispatch only from main, the matching release-preparation branch, or the exact release tag." >&2
+              exit 1
+            fi
+          fi
+          if [[ "$DRAFT_RELEASE" == true && ( "$GITHUB_EVENT_NAME" != workflow_dispatch || "$GITHUB_REF_TYPE" != tag || "$GITHUB_REF_NAME" != "$tag_name" ) ]]; then
+            echo "Draft publication requires a manual run from tag $tag_name." >&2
+            exit 1
+          fi
+          {
+            echo "source_sha=$source_sha" >> "$GITHUB_OUTPUT"
+            echo "version=$manifest_version" >> "$GITHUB_OUTPUT"
+            echo "tag_name=$tag_name" >> "$GITHUB_OUTPUT"
+          }
+          echo "Validated FigureIDE $manifest_version from $source_sha ($GITHUB_REF)."
+
+  windows:
+    name: Windows x64
+    needs: prepare
+    permissions:
+      contents: read
+    uses: ./.github/workflows/rvs-windows-release.yml
+    with:
+      release_version: ${{ needs.prepare.outputs.version }}
+      source_sha: ${{ needs.prepare.outputs.source_sha }}
+
+  linux:
+    name: Linux x86_64
+    needs: prepare
+    permissions:
+      contents: read
+    uses: ./.github/workflows/figureide-linux-release.yml
+    with:
+      release_version: ${{ needs.prepare.outputs.version }}
+      source_sha: ${{ needs.prepare.outputs.source_sha }}
+
+  macos:
+    name: macOS arm64 and x86_64
+    needs: prepare
+    permissions:
+      contents: read
+    uses: ./.github/workflows/figureide-macos.yml
+    with:
+      release_version: ${{ needs.prepare.outputs.version }}
+      source_sha: ${{ needs.prepare.outputs.source_sha }}
+
+  collect-and-validate:
+    name: Verify four packages and checksums
+    needs: [prepare, windows, linux, macos]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    steps:
+      - name: Check out validated source
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.prepare.outputs.source_sha }}
+
+      - name: Download Windows package
+        uses: actions/download-artifact@v4
+        with:
+          name: FigureIDE-Windows-x64
+          path: release-artifacts/windows
+
+      - name: Download Linux package
+        uses: actions/download-artifact@v4
+        with:
+          name: FigureIDE-Linux-x86_64
+          path: release-artifacts/linux
+
+      - name: Download macOS Apple Silicon package
+        uses: actions/download-artifact@v4
+        with:
+          name: FigureIDE-macOS-AppleSilicon
+          path: release-artifacts/macos-apple-silicon
+
+      - name: Download macOS Intel package
+        uses: actions/download-artifact@v4
+        with:
+          name: FigureIDE-macOS-Intel
+          path: release-artifacts/macos-intel
+
+      - name: Validate all archives and generate checksums
+        env:
+          RELEASE_VERSION: ${{ needs.prepare.outputs.version }}
+          SOURCE_SHA: ${{ needs.prepare.outputs.source_sha }}
+        run: python3 scripts/validate_figureide_release.py --directory release-artifacts --version "$RELEASE_VERSION" --commit "$SOURCE_SHA"
+
+      - name: Keep validated release files available
+        uses: actions/upload-artifact@v4
+        with:
+          name: FigureIDE-v${{ needs.prepare.outputs.version }}-validated-release
+          path: |
+            release-artifacts/windows/*.zip
+            release-artifacts/linux/*.tar.gz
+            release-artifacts/macos-apple-silicon/*.zip
+            release-artifacts/macos-intel/*.zip
+            release-artifacts/SHA256SUMS
+          if-no-files-found: error
+          retention-days: 30
+
+  draft-release:
+    name: Create prerelease draft
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.draft_release }}
+    needs: [prepare, collect-and-validate]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - name: Check out validated release source
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.prepare.outputs.source_sha }}
+
+      - name: Download validated packages and checksums
+        uses: actions/download-artifact@v4
+        with:
+          name: FigureIDE-v${{ needs.prepare.outputs.version }}-validated-release
+          path: release-artifacts
+
+      - name: Create or update an unpublished draft
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_VERSION: ${{ needs.prepare.outputs.version }}
+          RELEASE_TAG: ${{ needs.prepare.outputs.tag_name }}
+          SOURCE_SHA: ${{ needs.prepare.outputs.source_sha }}
+        run: |
+          set -euo pipefail
+          notes="docs/releases/figureide-v${RELEASE_VERSION}.md"
+          test -s "$notes"
+          assets=(
+            release-artifacts/windows/FigureIDE-v${RELEASE_VERSION}-Windows-x64.zip
+            release-artifacts/linux/FigureIDE-v${RELEASE_VERSION}-Linux-x86_64.tar.gz
+            release-artifacts/macos-apple-silicon/FigureIDE-v${RELEASE_VERSION}-macOS-AppleSilicon.zip
+            release-artifacts/macos-intel/FigureIDE-v${RELEASE_VERSION}-macOS-Intel.zip
+            release-artifacts/SHA256SUMS
+          )
+          for asset in "${assets[@]}"; do test -s "$asset"; done
+          if gh release view "$RELEASE_TAG" --json isDraft >/tmp/figureide-existing-release.json 2>/dev/null; then
+            is_draft="$(jq -r '.isDraft' /tmp/figureide-existing-release.json)"
+            if [[ "$is_draft" != true ]]; then
+              echo "Refusing to modify published release $RELEASE_TAG." >&2
+              exit 1
+            fi
+            gh release edit "$RELEASE_TAG" --title "FigureIDE v${RELEASE_VERSION}" --notes-file "$notes" --draft --prerelease
+            gh release upload "$RELEASE_TAG" "${assets[@]}" --clobber
+          else
+            gh release create "$RELEASE_TAG" "${assets[@]}" --target "$SOURCE_SHA" \
+              --title "FigureIDE v${RELEASE_VERSION}" --notes-file "$notes" --draft --prerelease
+          fi

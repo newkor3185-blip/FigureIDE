@@ -26,6 +26,11 @@ def main() -> int:
     info["CFBundleShortVersionString"] = short_version
     info["CFBundleVersion"] = short_version
     info["FigureIDEVersion"] = version
+    prerelease = version.partition("-")[2]
+    if prerelease:
+        info["FigureIDEPrerelease"] = prerelease
+    else:
+        info.pop("FigureIDEPrerelease", None)
     info["FigureIDEBuildCommit"] = build_sha or "unknown"
     info.pop("VectorCraftVersion", None)
     info.pop("VectorCraftBuildCommit", None)

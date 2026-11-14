@@ -2,6 +2,14 @@ name: FigureIDE Linux Artifact
 
 on:
   workflow_dispatch:
+  workflow_call:
+    inputs:
+      release_version:
+        required: true
+        type: string
+      source_sha:
+        required: true
+        type: string
 
 permissions:
   contents: read
@@ -14,6 +22,29 @@ jobs:
     steps:
       - name: Check out source
         uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.source_sha || github.sha }}
+
+      - name: Verify source commit and release version
+        env:
+          RELEASE_VERSION: ${{ inputs.release_version }}
+          EXPECTED_SOURCE_SHA: ${{ inputs.source_sha }}
+        run: |
+          set -euo pipefail
+          actual_sha="$(git rev-parse HEAD)"
+          if [[ -n "$EXPECTED_SOURCE_SHA" && "$actual_sha" != "$EXPECTED_SOURCE_SHA" ]]; then
+            echo "checked out $actual_sha, expected $EXPECTED_SOURCE_SHA" >&2
+            exit 1
+          fi
+          manifest_version="$(awk '/^\[workspace\.package\]/{p=1;next} /^\[/{p=0} p && $1=="version"{gsub(/[" ]/,"",$3);print $3;exit}' Cargo.toml)"
+          if [[ -n "$RELEASE_VERSION" && "$manifest_version" != "$RELEASE_VERSION" ]]; then
+            echo "release version $RELEASE_VERSION does not match Cargo version $manifest_version" >&2
+            exit 1
+          fi
+          {
+            echo "SOURCE_COMMIT=$actual_sha"
+            echo "MANIFEST_VERSION=$manifest_version"
+          } >> "$GITHUB_ENV"
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
@@ -31,7 +62,9 @@ jobs:
             r-base r-cran-ggplot2 r-cran-svglite r-cran-systemfonts
 
       - name: Check R plotting dependencies
-        run: Rscript -e 'stopifnot(requireNamespace("ggplot2", quietly = TRUE), requireNamespace("svglite", quietly = TRUE), requireNamespace("systemfonts", quietly = TRUE)); cat(R.version.string, "\n")'
+        run: |
+          Rscript -e 'stopifnot(requireNamespace("ggplot2", quietly = TRUE), requireNamespace("svglite", quietly = TRUE), requireNamespace("systemfonts", quietly = TRUE)); cat(R.version.string, "\n")'
+          Rscript -e 'svg <- tempfile(fileext=".svg"); svglite::svglite(svg, width=7, height=5); print(ggplot2::ggplot(iris, ggplot2::aes(Sepal.Length, Sepal.Width, colour=Species)) + ggplot2::geom_point()); grDevices::dev.off(); text <- paste(readLines(svg), collapse="\n"); stopifnot(grepl("<svg", text, fixed=TRUE), nchar(text) > 200); unlink(svg)'
 
       - name: Format check
         run: cargo fmt --all --check
@@ -59,12 +92,15 @@ jobs:
           test -s target/THIRD-PARTY-LICENSES.md
 
       - name: Package portable archive
+        env:
+          FIGUREIDE_RELEASE_VERSION: ${{ inputs.release_version }}
+          VECTORCRAFT_BUILD_SHA: ${{ inputs.source_sha || github.sha }}
         run: packaging/figureide-linux/package.sh
 
       - name: Verify package contents and executable
         run: |
           mkdir -p target/linux-package-check
-          tar -xzf dist/FigureIDE-Linux-x86_64.tar.gz -C target/linux-package-check
+          tar -xzf "$FIGUREIDE_ARCHIVE" -C target/linux-package-check
           package=target/linux-package-check/FigureIDE-Linux-x86_64
           test -x "$package/FigureIDE"
           test -s "$package/LICENSE-MIT"
@@ -72,14 +108,19 @@ jobs:
           test -s "$package/NOTICE"
           test -s "$package/ASSETS.md"
           test -s "$package/THIRD-PARTY-LICENSES.md"
+          test -s "$package/BUILD_INFO.txt"
           test -s "$package/licenses/pdf-backend/hayro-cmap/LICENSE.txt"
           test -s "$package/asset-licenses/app-icon/LICENSE-figureide.txt"
-          "$package/FigureIDE" --version
-          sha256sum dist/FigureIDE-Linux-x86_64.tar.gz
+          test -n "$(find "$package/asset-licenses" -type f -print -quit)"
+          grep -Fqx "version=$MANIFEST_VERSION" "$package/BUILD_INFO.txt"
+          grep -Fqx "commit=$SOURCE_COMMIT" "$package/BUILD_INFO.txt"
+          test "$("$package/FigureIDE" --version)" = "FigureIDE $MANIFEST_VERSION"
+          "$package/FigureIDE" --help >/dev/null
+          sha256sum "$FIGUREIDE_ARCHIVE"
 
       - name: Upload Linux archive
         uses: actions/upload-artifact@v4
         with:
           name: FigureIDE-Linux-x86_64
-          path: dist/FigureIDE-Linux-x86_64.tar.gz
+          path: ${{ inputs.release_version && format('dist/FigureIDE-v{0}-Linux-x86_64.tar.gz', inputs.release_version) || 'dist/FigureIDE-Linux-x86_64.tar.gz' }}
           if-no-files-found: error
