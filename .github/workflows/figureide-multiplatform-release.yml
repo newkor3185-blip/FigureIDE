@@ -44,8 +44,8 @@ permissions:
   contents: read
 
 concurrency:
-  group: figureide-beta-${{ inputs.version || github.event.pull_request.head.sha || github.sha }}
-  cancel-in-progress: false
+  group: figureide-beta-${{ github.event.pull_request.number || inputs.version || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   prepare:
