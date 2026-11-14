@@ -1922,7 +1922,7 @@ pub fn spin_field_named_fixed_step(
         step,
         min,
         presets,
-        false,
+        true,
         &|v| unit.format(v),
         &mut |ui, fw, label| unit_field(ui, id, label, name, value, unit, fw, false, min..=f64::INFINITY),
     )
@@ -1977,7 +1977,7 @@ pub fn spin_field_auto_named(
     presets: &[f64],
 ) -> Option<SpinPick> {
     let label = take_previous_label(ui);
-    spin_generic(ui, label, value, auto, auto.map(|_| tl!("Auto")), width, step, min, presets, true, &|v| unit.format(v), &mut |ui, fw, label| {
+    spin_generic(ui, label, value, auto, auto.map(|_| tl!("Auto")), width, step, min, presets, false, &|v| unit.format(v), &mut |ui, fw, label| {
         unit_field(ui, id, label, name, value, unit, fw, false, min..=f64::INFINITY)
     })
 }
@@ -2016,7 +2016,7 @@ pub fn spin_plain_named(
     let label = take_previous_label(ui);
     let value = value.into();
     let fmt = |v: f64| format!("{v}{suffix}");
-    spin_generic(ui, label, value, None, None, width, step, min, presets, true, &fmt, &mut |ui, fw, label| {
+    spin_generic(ui, label, value, None, None, width, step, min, presets, false, &fmt, &mut |ui, fw, label| {
         bounded_field(ui, id, label, name, value, suffix, decimals, fw, &(min..=f64::INFINITY), None)
     })
     .and_then(SpinPick::value)
