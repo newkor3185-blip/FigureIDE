@@ -1012,7 +1012,7 @@ fn graph_point_input_keeps_r_defaults_precision_presets_and_fixed_steps() {
     title.focus();
     title.type_text("14.25");
     h.run_steps(2);
-    assert!(h.state().scientific.graph_pending.get(&key).is_none(), "typing keeps focus and does not re-render before commit");
+    assert!(!h.state().scientific.graph_pending.contains_key(&key), "typing keeps focus and does not re-render before commit");
     h.key_press(egui::Key::Enter);
     h.run_steps(2);
     assert_eq!(h.state().scientific.graph_drafts.get(&key).and_then(|style| style.plot_title_pt), Some(14.25));
