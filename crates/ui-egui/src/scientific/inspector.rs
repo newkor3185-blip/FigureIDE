@@ -51,35 +51,73 @@ fn show_plot_properties_body(app: &mut crate::VectorcraftApp, ui: &mut egui::Ui,
             .color(if connected { tokens.text_dim } else { tokens.warning }),
     );
     ui.add_space(4.0);
-    panel_caption(ui, "R plot size · mm");
-    let width_response = ui
-        .horizontal(|ui| {
-            ui.label("W").on_hover_text("Output width in millimeters");
-            ui.add_sized(
-                [ui.available_width().max(80.0), 22.0],
-                egui::DragValue::new(&mut app.scientific.properties_width_mm)
-                    .range(1.0..=1000.0)
-                    .speed(0.5)
-                    .suffix(" mm")
-                    .update_while_editing(false),
-            )
-        })
-        .inner;
-    let width_changed = width_response.changed();
-    let height_response = ui
-        .horizontal(|ui| {
-            ui.label("H").on_hover_text("Output height in millimeters");
-            ui.add_sized(
-                [ui.available_width().max(80.0), 22.0],
-                egui::DragValue::new(&mut app.scientific.properties_height_mm)
-                    .range(1.0..=1000.0)
-                    .speed(0.5)
-                    .suffix(" mm")
-                    .update_while_editing(false),
-            )
-        })
-        .inner;
-    let height_changed = height_response.changed();
+    panel_caption(ui, "R plot size");
+    let units = app.session.general_unit();
+    let field_width = ((ui.available_width() - 48.0) / 2.0).max(36.0);
+    let mut width_changed = false;
+    let mut height_changed = false;
+    let origin = app.ruler_origin();
+    let bounds = app
+        .session
+        .doc()
+        .ok()
+        .and_then(|state| state.doc.bounds_of(&[vectorcraft_doc::NodeId(panel.panel_id)], false))
+        .map(|bounds| (bounds.x0 - origin.x, bounds.y0 - origin.y));
+    egui::Grid::new(("graph-transform-grid", panel.panel_id)).num_columns(4).spacing([4.0, 6.0]).min_col_width(0.0).show(ui, |ui| {
+        if auto_apply {
+            crate::widgets::dim_label(ui, "X:");
+            if let Some(value) = crate::widgets::num_field_named(
+                ui,
+                (panel.panel_id, "graph-transform-x"),
+                Some("X position"),
+                bounds.map(|b| b.0),
+                units,
+                field_width,
+            ) && bounds.is_some_and(|current| (value - current.0).abs() > f64::EPSILON)
+            {
+                crate::panels::transform::run_transform(app, "object.setBounds", serde_json::json!({"x": value + origin.x}));
+            }
+        }
+        crate::widgets::dim_label(ui, "W:").on_hover_text("Output width");
+        let width_points = app.scientific.properties_width_mm * DOC_POINTS_PER_MM;
+        if let Some(value) =
+            crate::widgets::size_field_named(ui, (panel.panel_id, "graph-size-width"), Some("Output width"), Some(width_points), units, field_width)
+        {
+            let width_mm = (value / DOC_POINTS_PER_MM).clamp(1.0, 1000.0);
+            width_changed = (width_mm - app.scientific.properties_width_mm).abs() > f64::EPSILON;
+            app.scientific.properties_width_mm = width_mm;
+        }
+        if auto_apply {
+            ui.end_row();
+            crate::widgets::dim_label(ui, "Y:");
+            if let Some(value) = crate::widgets::num_field_named(
+                ui,
+                (panel.panel_id, "graph-transform-y"),
+                Some("Y position"),
+                bounds.map(|b| b.1),
+                units,
+                field_width,
+            ) && bounds.is_some_and(|current| (value - current.1).abs() > f64::EPSILON)
+            {
+                crate::panels::transform::run_transform(app, "object.setBounds", serde_json::json!({"y": value + origin.y}));
+            }
+        }
+        crate::widgets::dim_label(ui, "H:").on_hover_text("Output height");
+        let height_points = app.scientific.properties_height_mm * DOC_POINTS_PER_MM;
+        if let Some(value) = crate::widgets::size_field_named(
+            ui,
+            (panel.panel_id, "graph-size-height"),
+            Some("Output height"),
+            Some(height_points),
+            units,
+            field_width,
+        ) {
+            let height_mm = (value / DOC_POINTS_PER_MM).clamp(1.0, 1000.0);
+            height_changed = (height_mm - app.scientific.properties_height_mm).abs() > f64::EPSILON;
+            app.scientific.properties_height_mm = height_mm;
+        }
+        ui.end_row();
+    });
     ui.checkbox(&mut app.scientific.properties_aspect_lock, "Lock aspect ratio");
     if app.scientific.properties_aspect_lock && app.scientific.properties_aspect_ratio.is_finite() && app.scientific.properties_aspect_ratio > 0.0 {
         if width_changed {
@@ -88,10 +126,7 @@ fn show_plot_properties_body(app: &mut crate::VectorcraftApp, ui: &mut egui::Ui,
             app.scientific.properties_width_mm = app.scientific.properties_height_mm * app.scientific.properties_aspect_ratio;
         }
     }
-    let commit_size = |response: &egui::Response| {
-        response.lost_focus() || response.drag_stopped() || (response.has_focus() && ui.input(|input| input.key_pressed(egui::Key::Enter)))
-    };
-    if auto_apply && (commit_size(&width_response) || commit_size(&height_response)) {
+    if auto_apply && (width_changed || height_changed) {
         let key = (panel.document_uid, panel.panel_id);
         let style = app.scientific.graph_pending.get(&key).map(|request| request.style.clone()).unwrap_or_else(|| panel.graph_style.clone());
         let width_mm = app.scientific.properties_width_mm;

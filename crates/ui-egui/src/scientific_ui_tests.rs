@@ -625,7 +625,9 @@ fn r_workspace_stage4_inspector_identifies_link_and_preserves_vector_controls() 
             h.state_mut().run("window.panel.activate", json!({"panel": "properties"})).unwrap();
             h.run_steps(2);
             assert!(h.query_by_label("R-linked plot · Panel A").is_some(), "linked selection appears in native Inspector");
-            for label in ["plot_A", "R plot size · mm", "Update from R", "Apply Resize", "Vector transform (document points)"] {
+            for label in
+                ["plot_A", "R plot size", "Output width", "Output height", "Update from R", "Apply Resize", "Vector transform (document points)"]
+            {
                 assert!(h.query_all_by_label(label).next().is_some(), "missing Inspector control {label}");
             }
             let geometry = workspace_measurements(&h, width, height);
@@ -683,8 +685,54 @@ fn graph_style_metadata_restores_with_panel_identity_and_reflow_dimensions() {
 }
 
 #[test]
-fn graph_dock_shows_panel_controls_and_empty_state_at_narrow_width() {
+fn graph_copy_as_r_code_uses_selected_gui_overrides_without_changing_the_script() {
     let mut h = linked_workspace_harness(900.0, 720.0, 1.0);
+    let panel = h.state().scientific.linked_panels[0].clone();
+    let key = (panel.document_uid, panel.panel_id);
+    h.state_mut().scientific.graph_drafts.insert(
+        key,
+        crate::scientific::graph_style::GraphStyle {
+            tick_x_pt: Some(11.0),
+            tick_y_pt: Some(13.0),
+            legend_position: Some(crate::scientific::graph_style::LegendPosition::Top),
+            ..Default::default()
+        },
+    );
+    h.state_mut().run("select.set", json!({"ids": [panel.panel_id]})).unwrap();
+    let source = (h.state().scientific.console_history.clone(), h.state().scientific.console_output.clone());
+    h.run_steps(5);
+    h.get_by_label("Copy as R Code").click_accesskit();
+    h.run_steps(2);
+
+    let code = h.state().clipboard_out.as_deref().expect("generated R code should be copied");
+    assert!(code.contains("get(\"plot_A\""));
+    assert!(code.contains("axis.text.x = ggplot2::element_text(size = 11.0)"));
+    assert!(code.contains("axis.text.y = ggplot2::element_text(size = 13.0)"));
+    assert!(code.contains("legend.position = \"top\""));
+    assert_eq!(
+        (h.state().scientific.console_history.clone(), h.state().scientific.console_output.clone()),
+        source,
+        "copying styles must not edit R input or output"
+    );
+    assert!(h.state().ui.status.to_lowercase().contains("copied r code"));
+}
+
+#[test]
+fn graph_copy_as_r_code_is_only_offered_for_linked_ggplot_objects() {
+    let mut h = linked_workspace_harness(900.0, 720.0, 1.0);
+    let panel_id = h.state().scientific.linked_panels[0].panel_id;
+    h.state_mut().scientific.plots[0].plot_kind = "base".into();
+    h.state_mut().run("select.set", json!({"ids": [panel_id]})).unwrap();
+    h.run_steps(5);
+    assert!(h.query_by_label("Copy as R Code").is_none());
+    assert!(
+        h.query_by_label("This plot type supports size and refresh. Style overrides and R code export require a connected ggplot object.").is_some()
+    );
+}
+
+#[test]
+fn graph_dock_shows_panel_controls_and_empty_state_at_narrow_width() {
+    let mut h = linked_workspace_harness(900.0, 1200.0, 1.0);
     let panel = h.state().scientific.linked_panels[0].panel_id;
     h.state_mut().run("select.set", json!({"ids": [panel]})).unwrap();
     h.run_steps(5);
@@ -700,21 +748,176 @@ fn graph_dock_shows_panel_controls_and_empty_state_at_narrow_width() {
         "Relink",
         "Unlink",
         "Delete Artwork",
-        "Figure Size",
-        "Axes",
-        "Typography",
+        "Transform",
+        "R plot size",
+        "Title",
+        "X axis",
+        "Y axis",
         "Legend",
+        "Plot",
+        "Copy as R Code",
         "Reset Graph Styles to R",
-        "X-axis tick labels",
-        "X-axis title",
     ] {
         assert!(h.query_all_by_label(label).next().is_some(), "missing Graph control {label}");
     }
+    let x = h.get_by_role_and_label(Role::TextInput, "X position").rect();
+    let y = h.get_by_role_and_label(Role::TextInput, "Y position").rect();
+    let width = h.get_by_role_and_label(Role::TextInput, "Output width").rect();
+    let height = h.get_by_role_and_label(Role::TextInput, "Output height").rect();
+    assert!((x.center().y - width.center().y).abs() < 1.0, "X and W share a row: {x:?} / {width:?}");
+    assert!((y.center().y - height.center().y).abs() < 1.0, "Y and H share a row: {y:?} / {height:?}");
+    assert!((x.width() - width.width()).abs() < 1.0, "X and W fields have equal widths: {x:?} / {width:?}");
+    assert!((y.width() - height.width()).abs() < 1.0, "Y and H fields have equal widths: {y:?} / {height:?}");
+    assert!(h.query_by_label("X-axis tick labels visibility").is_some());
+    assert!(h.query_by_label("X line width").is_some());
+    assert!(h.query_by_label("Y line width").is_some());
+    assert!(h.query_all_by_role_and_label(Role::ComboBox, "Title font face").next().is_some(), "font face remains a direct, accessible control");
+    assert!(h.query_by_label("Key width").is_some(), "key width is exposed beside key size");
+    assert!(h.query_all_by_label("Position").count() >= 2, "title and legend positions should be accessible");
+
+    let line = h.query_all_by_label("Line").next().expect("X axis line has advanced settings");
+    line.click_accesskit();
+    h.run_steps(2);
+    for control in ["Axis line colour", "Tick marks", "Tick colour", "Tick width", "Tick length"] {
+        assert!(h.query_all_by_label(control).next().is_some(), "X axis Line popover must expose {control}");
+    }
+    capture(&mut h, BottomTab::LinkedPanels, 900.0, 1.0, "graph-inspector-x-line-popover", &json!({"component": "X axis"}));
+    h.query_all_by_label("Line").next().unwrap().click_accesskit();
+    h.run_steps(2);
+    assert!(!egui::Popup::is_any_open(&h.ctx), "clicking the anchor closes its advanced popover");
+
+    h.query_all_by_label("Text").next().expect("X axis text has advanced settings").click_accesskit();
+    h.run_steps(2);
+    for control in ["X-axis tick labels family", "X-axis tick labels colour", "X-axis tick labels angle"] {
+        assert!(h.query_all_by_label(control).next().is_some(), "X axis Text popover must expose {control}");
+    }
+    h.query_all_by_label("Text").next().unwrap().click_accesskit();
+    h.run_steps(2);
+
+    h.query_all_by_label("Key").next().expect("legend key has advanced settings").click_accesskit();
+    h.run_steps(2);
+    for control in ["Key height", "Key fill", "Legend fill", "Spacing X", "Spacing Y", "Legend margins"] {
+        assert!(h.query_all_by_label(control).next().is_some(), "Legend Key popover must expose {control}");
+    }
+    h.query_all_by_label("Key").next().unwrap().click_accesskit();
+    h.run_steps(2);
+
     assert!(h.query_by_label("Linked Plot Panel").is_none());
     assert!(h.query_by_label("Scale").is_none());
+    capture(&mut h, BottomTab::LinkedPanels, 900.0, 1.0, "graph-inspector-components", &json!({"components": 6}));
     h.state_mut().run("select.none", json!({})).unwrap();
     h.run_steps(3);
     assert!(h.query_by_label("Select an R-linked plot on the artboard to edit its graph settings.").is_some());
+}
+
+#[test]
+fn graph_inspector_compact_controls_render_at_narrow_medium_and_wide_widths() {
+    for (width, scenario) in [(900.0, "narrow"), (1200.0, "medium"), (1600.0, "wide")] {
+        let height = 1600.0;
+        let mut h = linked_workspace_harness(width, height, 1.0);
+        let panel = h.state().scientific.linked_panels[0].clone();
+        let key = (panel.document_uid, panel.panel_id);
+        h.state_mut().scientific.graph_drafts.insert(
+            key,
+            crate::scientific::graph_style::GraphStyle {
+                plot_title_pt: Some(14.0),
+                title_details: crate::scientific::graph_style::TextDetails {
+                    face: Some(crate::scientific::graph_style::FontFace::Bold),
+                    ..Default::default()
+                },
+                subtitle_pt: Some(11.0),
+                subtitle_details: crate::scientific::graph_style::TextDetails {
+                    face: Some(crate::scientific::graph_style::FontFace::Italic),
+                    ..Default::default()
+                },
+                caption_pt: Some(9.0),
+                caption_details: crate::scientific::graph_style::TextDetails {
+                    face: Some(crate::scientific::graph_style::FontFace::Plain),
+                    ..Default::default()
+                },
+                tick_x_pt: Some(8.0),
+                tick_x_details: crate::scientific::graph_style::TextDetails {
+                    face: Some(crate::scientific::graph_style::FontFace::Plain),
+                    ..Default::default()
+                },
+                tick_y_pt: Some(8.0),
+                tick_y_details: crate::scientific::graph_style::TextDetails {
+                    face: Some(crate::scientific::graph_style::FontFace::Plain),
+                    ..Default::default()
+                },
+                axis_title_x_pt: Some(10.0),
+                axis_title_x_details: crate::scientific::graph_style::TextDetails {
+                    face: Some(crate::scientific::graph_style::FontFace::Bold),
+                    ..Default::default()
+                },
+                axis_title_y_pt: Some(10.0),
+                axis_title_y_details: crate::scientific::graph_style::TextDetails {
+                    face: Some(crate::scientific::graph_style::FontFace::Bold),
+                    ..Default::default()
+                },
+                legend_title_pt: Some(10.0),
+                legend_title_details: crate::scientific::graph_style::TextDetails {
+                    face: Some(crate::scientific::graph_style::FontFace::Bold),
+                    ..Default::default()
+                },
+                legend_key_mm: Some(5.0),
+                legend_key_width_mm: Some(5.0),
+                major_grid_width_mm: Some(0.2),
+                minor_grid_width_mm: Some(0.1),
+                ..Default::default()
+            },
+        );
+        h.state_mut().run("select.set", json!({"ids": [panel.panel_id]})).unwrap();
+        h.run_steps(5);
+
+        let title_size = h.get_all_by_role_and_label(Role::TextInput, "Title").next().unwrap().rect();
+        let title_face = h.get_all_by_role_and_label(Role::ComboBox, "Title font face").next().unwrap().rect();
+        let top_controls = [
+            ("X", h.get_by_role_and_label(Role::TextInput, "X position").rect()),
+            ("Y", h.get_by_role_and_label(Role::TextInput, "Y position").rect()),
+            ("W", h.get_by_role_and_label(Role::TextInput, "Output width").rect()),
+            ("H", h.get_by_role_and_label(Role::TextInput, "Output height").rect()),
+            ("Title size", title_size),
+            ("Title face", title_face),
+        ];
+        for (label, rect) in top_controls {
+            assert!(rect.left() >= -1.0 && rect.right() <= width + 1.0, "{label} is clipped at {width}px: {rect:?}");
+            assert!(rect.top() >= -1.0 && rect.bottom() <= height + 1.0, "{label} is vertically clipped: {rect:?}");
+        }
+        let title_face_same_row = (title_size.center().y - title_face.center().y).abs() < 2.0;
+        if width >= 1200.0 {
+            assert!(
+                title_face_same_row,
+                "title size and face should share a row when the inspector has room at {width}px: {title_size:?} / {title_face:?}"
+            );
+        }
+        let top_measurements = json!({
+            "windowWidth": width,
+            "titleFontFaceSharesRow": title_face_same_row,
+            "controls": top_controls.iter().map(|(label, rect)| json!({"label": label, "rect": [rect.left(), rect.top(), rect.width(), rect.height()]})).collect::<Vec<_>>()
+        });
+        capture(&mut h, BottomTab::LinkedPanels, width, 1.0, &format!("graph-inspector-{scenario}-top"), &top_measurements);
+
+        h.hover_at(egui::pos2(width - 30.0, height - 50.0));
+        h.event(egui::Event::MouseWheel {
+            unit: egui::MouseWheelUnit::Point,
+            delta: vec2(0.0, -20_000.0),
+            modifiers: egui::Modifiers::NONE,
+            phase: egui::TouchPhase::Move,
+            source: egui::MouseWheelSource::Unknown,
+        });
+        h.run_steps(5);
+        let bottom_controls = [("Key width", h.get_by_label("Key width").rect()), ("Copy as R Code", h.get_by_label("Copy as R Code").rect())];
+        for (label, rect) in bottom_controls {
+            assert!(rect.left() >= -1.0 && rect.right() <= width + 1.0, "{label} is clipped at {width}px: {rect:?}");
+            assert!(rect.top() >= -1.0 && rect.bottom() <= height + 1.0, "{label} is not reachable by scrolling: {rect:?}");
+        }
+        let bottom_measurements = json!({
+            "windowWidth": width,
+            "controls": bottom_controls.iter().map(|(label, rect)| json!({"label": label, "rect": [rect.left(), rect.top(), rect.width(), rect.height()]})).collect::<Vec<_>>()
+        });
+        capture(&mut h, BottomTab::LinkedPanels, width, 1.0, &format!("graph-inspector-{scenario}-bottom"), &bottom_measurements);
+    }
 }
 
 #[test]
@@ -727,13 +930,7 @@ fn graph_visibility_control_and_apply_queue_keep_font_size() {
     // Keep the fixture's synthetic R plot from starting a real render.
     h.state_mut().scientific.running = true;
     h.run_steps(5);
-    h.get_by_label("X-axis tick labels").click_accesskit();
-    h.run_steps(2);
-    assert!(h.query_by_role_and_label(Role::ComboBox, "X-axis tick labels visibility").is_some());
-    let panel = h.state().scientific.linked_panels[0].clone();
-    let mut style = h.state().scientific.graph_drafts.get(&key).unwrap().clone();
-    style.tick_x_visible = Some(false);
-    request_graph_apply(&mut h.state_mut().scientific, &panel, style, panel.width_mm, panel.height_mm).unwrap();
+    h.get_by_label("X-axis tick labels visibility").click_accesskit();
     h.run_steps(2);
     let state = h.state();
     let request = state.scientific.graph_pending.get(&key).unwrap_or_else(|| {
@@ -753,9 +950,11 @@ fn graph_numeric_edit_waits_for_enter_before_queuing_render() {
     h.state_mut().run("select.set", json!({"ids": [panel]})).unwrap();
     h.state_mut().scientific.running = true;
     h.run_steps(5);
-    h.get_by_role_and_label(Role::SpinButton, "X line width").click();
+    h.query_all_by_label("Line").next().expect("axis line popover").click_accesskit();
     h.run_steps(2);
-    let input = h.get_by_role_and_label(Role::SpinButton, "X line width");
+    h.get_by_role_and_label(Role::TextInput, "X line width").click();
+    h.run_steps(2);
+    let input = h.get_by_role_and_label(Role::TextInput, "X line width");
     input.focus();
     h.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::A);
     input.type_text("1.7");
@@ -764,20 +963,128 @@ fn graph_numeric_edit_waits_for_enter_before_queuing_render() {
     h.key_press(egui::Key::Enter);
     h.run_steps(2);
     let request = h.state().scientific.graph_pending.get(&key).expect("Enter should queue render");
-    assert_eq!(request.style.axis_x_line_mm, Some(1.7));
-    h.get_by_role_and_label(Role::SpinButton, "X line width").click();
+    assert_eq!(request.style.axis_x_line_mm, Some(vectorcraft_doc::Unit::Millimeters.from_pt(1.7)));
+    h.get_by_role_and_label(Role::TextInput, "X line width").click();
     h.run_steps(2);
-    let input = h.get_by_role_and_label(Role::SpinButton, "X line width");
+    let input = h.get_by_role_and_label(Role::TextInput, "X line width");
     input.focus();
     h.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::A);
     input.type_text("2.1");
     h.run_steps(2);
-    assert_eq!(h.state().scientific.graph_pending.get(&key).and_then(|request| request.style.axis_x_line_mm), Some(1.7));
+    assert_eq!(
+        h.state().scientific.graph_pending.get(&key).and_then(|request| request.style.axis_x_line_mm),
+        Some(vectorcraft_doc::Unit::Millimeters.from_pt(1.7))
+    );
     if let Some(focused) = h.ctx.memory(|memory| memory.focused()) {
         h.ctx.memory_mut(|memory| memory.surrender_focus(focused));
     }
     h.run_steps(2);
-    assert_eq!(h.state().scientific.graph_pending.get(&key).and_then(|request| request.style.axis_x_line_mm), Some(2.1));
+    assert_eq!(
+        h.state().scientific.graph_pending.get(&key).and_then(|request| request.style.axis_x_line_mm),
+        Some(vectorcraft_doc::Unit::Millimeters.from_pt(2.1))
+    );
+    h.query_all_by_label("Line").next().unwrap().click_accesskit();
+    h.run_steps(2);
+    assert!(!egui::Popup::is_any_open(&h.ctx), "clicking the active property closes its popover");
+    h.query_all_by_label("Line").next().unwrap().click_accesskit();
+    h.run_steps(2);
+    assert_eq!(
+        h.state().scientific.graph_drafts.get(&key).and_then(|style| style.axis_x_line_mm),
+        Some(vectorcraft_doc::Unit::Millimeters.from_pt(2.1)),
+        "closing and reopening preserves the edited draft"
+    );
+    assert!(h.query_by_role_and_label(Role::TextInput, "X line width").is_some());
+}
+
+#[test]
+fn graph_point_input_keeps_r_defaults_precision_presets_and_fixed_steps() {
+    let mut h = linked_workspace_harness(1200.0, 900.0, 1.0);
+    let panel = h.state().scientific.linked_panels[0].clone();
+    let key = (panel.document_uid, panel.panel_id);
+    h.state_mut().run("select.set", json!({"ids": [panel.panel_id]})).unwrap();
+    h.state_mut().scientific.running = true;
+    h.run_steps(5);
+
+    assert_eq!(
+        h.state().scientific.graph_drafts.get(&key).and_then(|style| style.plot_title_pt),
+        None,
+        "R default remains inherited on first render"
+    );
+    let title = h.get_all_by_role_and_label(Role::TextInput, "Title").next().unwrap();
+    title.focus();
+    title.type_text("14.25");
+    h.run_steps(2);
+    assert!(!h.state().scientific.graph_pending.contains_key(&key), "typing keeps focus and does not re-render before commit");
+    h.key_press(egui::Key::Enter);
+    h.run_steps(2);
+    assert_eq!(h.state().scientific.graph_drafts.get(&key).and_then(|style| style.plot_title_pt), Some(14.25));
+
+    let title_rect = h.get_all_by_role_and_label(Role::TextInput, "Title").next().unwrap().rect();
+    let step = h
+        .query_all_by_role_and_label(Role::Button, "Step up or down")
+        .find(|button| {
+            let rect = button.rect();
+            (rect.center().y - title_rect.center().y).abs() < 2.0 && rect.right() <= title_rect.left() + 1.0
+        })
+        .expect("Title has the Stroke-style stepper");
+    let point = egui::pos2(step.rect().center().x, step.rect().top() + 5.0);
+    h.event(egui::Event::PointerMoved(point));
+    h.event(egui::Event::PointerButton { pos: point, button: egui::PointerButton::Primary, pressed: true, modifiers: egui::Modifiers::SHIFT });
+    h.run_steps(1);
+    h.event(egui::Event::PointerButton { pos: point, button: egui::PointerButton::Primary, pressed: false, modifiers: egui::Modifiers::SHIFT });
+    h.run_steps(2);
+    assert_eq!(
+        h.state().scientific.graph_drafts.get(&key).and_then(|style| style.plot_title_pt),
+        Some(15.25),
+        "one click remains exactly +1 pt even with Shift held"
+    );
+
+    h.get_all_by_role_and_label(Role::Button, "Presets").next().unwrap().click_accesskit();
+    h.run_steps(2);
+    assert!(h.query_by_label("14 pt").is_some(), "font-size preset list uses point values");
+    h.get_by_label("14 pt").click_accesskit();
+    h.run_steps(2);
+    assert_eq!(h.state().scientific.graph_drafts.get(&key).and_then(|style| style.plot_title_pt), Some(14.0));
+    assert!(!egui::Popup::is_any_open(&h.ctx), "selecting a preset closes its popup");
+
+    let title = h.get_all_by_role_and_label(Role::TextInput, "Title").next().unwrap();
+    title.focus();
+    h.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::A);
+    title.type_text("NaN");
+    h.key_press(egui::Key::Enter);
+    h.run_steps(2);
+    let invalid = h.get_all_by_role_and_label(Role::TextInput, "Title").next().unwrap();
+    assert!(invalid.is_focused(), "malformed input remains visible and focused for correction");
+    assert_eq!(invalid.value().as_deref(), Some("NaN"));
+    assert_eq!(h.state().scientific.graph_drafts.get(&key).and_then(|style| style.plot_title_pt), Some(14.0));
+
+    let title = h.get_all_by_role_and_label(Role::TextInput, "Title").next().unwrap();
+    title.focus();
+    h.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::A);
+    title.type_text("14");
+    h.key_press(egui::Key::Enter);
+    h.run_steps(2);
+    assert_eq!(h.state().scientific.graph_drafts.get(&key).and_then(|style| style.plot_title_pt), Some(14.0));
+
+    let title = h.get_all_by_role_and_label(Role::TextInput, "Title").next().unwrap();
+    title.focus();
+    h.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::A);
+    title.type_text("101");
+    h.key_press(egui::Key::Enter);
+    h.run_steps(2);
+    assert_eq!(h.state().scientific.graph_drafts.get(&key).and_then(|style| style.plot_title_pt), Some(101.0));
+    assert!(h.state().scientific.r_status.contains("between 0.1 and 100 pt"), "invalid input is reported and not queued to R");
+    assert_eq!(h.state().scientific.graph_pending.get(&key).map(|request| request.style.plot_title_pt), Some(Some(14.0)));
+
+    let title_rect = h.get_all_by_role_and_label(Role::TextInput, "Title").next().unwrap().rect();
+    h.query_all_by_role_and_label(Role::Button, "Presets")
+        .find(|button| (button.rect().center().y - title_rect.center().y).abs() < 2.0)
+        .expect("Title has the preset and R-default menu")
+        .click_accesskit();
+    h.run_steps(2);
+    h.get_all_by_role_and_label(Role::Button, "R default").next().unwrap().click_accesskit();
+    h.run_steps(2);
+    assert_eq!(h.state().scientific.graph_drafts.get(&key).and_then(|style| style.plot_title_pt), None, "R reset restores inheritance");
 }
 
 #[test]
@@ -819,13 +1126,13 @@ fn graph_size_draft_stays_with_ma_panel_while_pca_is_selected() {
     h.get_by_label("Plot Registry (2)").click_accesskit();
     h.get_by_label("Linked Panels (2)").click_accesskit();
     h.run_steps(3);
-    let input = h.get_all_by_role_and_label(Role::SpinButton, "mm").next().expect("Graph width input");
+    let input = h.get_by_role_and_label(Role::TextInput, "Output width");
     input.click();
     h.run_steps(2);
-    let input = h.get_all_by_role_and_label(Role::SpinButton, "mm").next().unwrap();
+    let input = h.get_by_role_and_label(Role::TextInput, "Output width");
     input.focus();
     h.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::A);
-    input.type_text("120");
+    input.type_text("120 mm");
     h.run_steps(2);
     h.key_press(egui::Key::Enter);
     h.run_steps(2);
@@ -837,13 +1144,13 @@ fn graph_size_draft_stays_with_ma_panel_while_pca_is_selected() {
     h.state_mut().run("select.set", json!({"ids": [ma.panel_id]})).unwrap();
     h.run_steps(3);
     assert_eq!(h.state().scientific.properties_width_mm, 120.0, "MA's committed width must survive selection changes while rendering");
-    let height = h.get_all_by_role_and_label(Role::SpinButton, "mm").nth(1).expect("Graph height input");
+    let height = h.get_by_role_and_label(Role::TextInput, "Output height");
     height.click();
     h.run_steps(2);
-    let height = h.get_all_by_role_and_label(Role::SpinButton, "mm").nth(1).unwrap();
+    let height = h.get_by_role_and_label(Role::TextInput, "Output height");
     height.focus();
     h.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::A);
-    height.type_text("80");
+    height.type_text("80 mm");
     h.run_steps(2);
     h.key_press(egui::Key::Enter);
     h.run_steps(2);
