@@ -67,17 +67,22 @@ fn string_row(ui: &mut egui::Ui, label: &str, value: &mut Option<String>, sugges
     .inner
 }
 
-fn face_row(ui: &mut egui::Ui, label: &str, value: &mut Option<FontFace>) -> bool {
+fn face_control(ui: &mut egui::Ui, id: &str, label: &str, labelled_by: egui::Id, value: &mut Option<FontFace>) -> bool {
     let before = *value;
-    ui.horizontal(|ui| {
-        ui.label(label);
-        egui::ComboBox::from_id_salt(("graph-face", label)).selected_text(value.map_or("R default", FontFace::label)).show_ui(ui, |ui| {
+    let width = ui.available_width().clamp(70.0, 86.0);
+    egui::ComboBox::from_id_salt(("graph-face", id))
+        .width(width)
+        .selected_text(value.map_or("R default", FontFace::label))
+        .show_ui(ui, |ui| {
             ui.selectable_value(value, None, "R default");
             for face in FontFace::ALL {
                 ui.selectable_value(value, Some(face), face.label());
             }
-        });
-    });
+        })
+        .response
+        .labelled_by(labelled_by)
+        .accessible_name(format!("{label} font face"))
+        .on_hover_text(format!("{label} font face"));
     *value != before
 }
 
@@ -90,7 +95,7 @@ fn margins_row(ui: &mut egui::Ui, label: &str, value: &mut Option<[f64; 4]>) -> 
     }
     if let Some(margins) = value {
         for (index, side) in ["Top", "Right", "Bottom", "Left"].into_iter().enumerate() {
-            ui.horizontal(|ui| {
+            ui.horizontal_wrapped(|ui| {
                 ui.label(side);
                 let response =
                     ui.add(egui::DragValue::new(&mut margins[index]).range(-100.0..=100.0).speed(0.2).suffix(" mm").update_while_editing(false));
@@ -189,6 +194,8 @@ fn basic_visibility(ui: &mut egui::Ui, label: &str, value: &mut Option<bool>) ->
 struct TextRowSpec<'a> {
     id: &'a str,
     label: &'a str,
+    detail_label: &'a str,
+    visibility_label: &'a str,
     tick: bool,
     title: bool,
 }
@@ -201,18 +208,16 @@ fn basic_text_row(
     details: &mut TextDetails,
     suggested: f64,
 ) -> bool {
-    let mut committed = ui
-        .horizontal(|ui| {
-            let (popover, label_response) =
-                property_popover_with_response(ui, spec.id, spec.label, |ui| advanced_text(ui, spec.label, details, spec.tick, spec.title));
-            let mut committed = popover.unwrap_or(false);
-            committed |= compact_number_control(ui, size, suggested, " pt", 0.1..=100.0, Some(label_response.id));
-            committed |= basic_visibility(ui, &format!("{} visibility", spec.label), visible);
-            committed
-        })
-        .inner;
-    committed |= face_row(ui, &format!("{} face", spec.label), &mut details.face);
-    committed
+    ui.horizontal_wrapped(|ui| {
+        let (popover, label_response) =
+            property_popover_with_response(ui, spec.id, spec.label, |ui| advanced_text(ui, spec.detail_label, details, spec.tick, spec.title));
+        let mut committed = popover.unwrap_or(false);
+        committed |= compact_number_control_with_width(ui, size, suggested, " pt", 0.1..=100.0, Some(label_response.id), 64.0);
+        committed |= face_control(ui, spec.id, spec.label, label_response.id, &mut details.face);
+        committed |= basic_visibility(ui, spec.visibility_label, visible);
+        committed
+    })
+    .inner
 }
 
 fn compact_number(
@@ -235,6 +240,18 @@ fn compact_number_control(
     range: std::ops::RangeInclusive<f64>,
     labelled_by: Option<egui::Id>,
 ) -> bool {
+    compact_number_control_with_width(ui, value, suggested, suffix, range, labelled_by, 84.0)
+}
+
+fn compact_number_control_with_width(
+    ui: &mut egui::Ui,
+    value: &mut Option<f64>,
+    suggested: f64,
+    suffix: &str,
+    range: std::ops::RangeInclusive<f64>,
+    labelled_by: Option<egui::Id>,
+    max_width: f32,
+) -> bool {
     let mut committed = false;
     if value.is_none() {
         ui.weak("R default");
@@ -245,7 +262,7 @@ fn compact_number_control(
     } else {
         if let Some(number) = value.as_mut() {
             let mut response = ui.add_sized(
-                [ui.available_width().clamp(48.0, 84.0), 20.0],
+                [ui.available_width().clamp(48.0, max_width), 20.0],
                 egui::DragValue::new(number).range(range).speed(0.2).suffix(suffix).update_while_editing(false),
             );
             if let Some(labelled_by) = labelled_by {
@@ -296,7 +313,7 @@ fn axis_component(ui: &mut egui::Ui, title: &str, id: &str, style: &mut GraphSty
     let mut committed = false;
     egui::CollapsingHeader::new(title).id_salt(("graph-component", id)).default_open(true).show(ui, |ui| {
         if x_axis {
-            ui.horizontal(|ui| {
+            ui.horizontal_wrapped(|ui| {
                 property_popover(ui, "x-axis-line", "Line", |ui| {
                     let mut changed = string_row(ui, "Axis line colour", &mut style.axis_x_line_colour, "#222222");
                     changed |= visibility_row(ui, "Tick marks", &mut style.axis_x_ticks_visible);
@@ -308,20 +325,38 @@ fn axis_component(ui: &mut egui::Ui, title: &str, id: &str, style: &mut GraphSty
                 committed |= compact_number(ui, "X line width", &mut style.axis_x_line_mm, 0.5, " mm", 0.1..=20.0);
                 committed |= basic_visibility(ui, "X-axis line visibility", &mut style.axis_x_visible);
             });
-            ui.horizontal(|ui| {
-                property_popover(ui, "x-axis-text", "Text", |ui| advanced_text(ui, "X-axis tick labels", &mut style.tick_x_details, true, false));
-                committed |= compact_number(ui, "Size", &mut style.tick_x_pt, 8.0, " pt", 0.1..=100.0);
-                committed |= basic_visibility(ui, "X-axis tick labels visibility", &mut style.tick_x_visible);
-            });
-            committed |= face_row(ui, "X-axis tick labels face", &mut style.tick_x_details.face);
-            ui.horizontal(|ui| {
-                property_popover(ui, "x-axis-title", "Title", |ui| advanced_text(ui, "X-axis title", &mut style.axis_title_x_details, false, true));
-                committed |= compact_number(ui, "Title size", &mut style.axis_title_x_pt, 10.0, " pt", 0.1..=100.0);
-                committed |= basic_visibility(ui, "X-axis title visibility", &mut style.axis_title_x_visible);
-            });
-            committed |= face_row(ui, "X-axis title face", &mut style.axis_title_x_details.face);
+            committed |= basic_text_row(
+                ui,
+                TextRowSpec {
+                    id: "x-axis-text",
+                    label: "Text",
+                    detail_label: "X-axis tick labels",
+                    visibility_label: "X-axis tick labels visibility",
+                    tick: true,
+                    title: false,
+                },
+                &mut style.tick_x_pt,
+                &mut style.tick_x_visible,
+                &mut style.tick_x_details,
+                8.0,
+            );
+            committed |= basic_text_row(
+                ui,
+                TextRowSpec {
+                    id: "x-axis-title",
+                    label: "Title",
+                    detail_label: "X-axis title",
+                    visibility_label: "X-axis title visibility",
+                    tick: false,
+                    title: true,
+                },
+                &mut style.axis_title_x_pt,
+                &mut style.axis_title_x_visible,
+                &mut style.axis_title_x_details,
+                10.0,
+            );
         } else {
-            ui.horizontal(|ui| {
+            ui.horizontal_wrapped(|ui| {
                 property_popover(ui, "y-axis-line", "Line", |ui| {
                     let mut changed = string_row(ui, "Axis line colour", &mut style.axis_y_line_colour, "#222222");
                     changed |= visibility_row(ui, "Tick marks", &mut style.axis_y_ticks_visible);
@@ -333,18 +368,36 @@ fn axis_component(ui: &mut egui::Ui, title: &str, id: &str, style: &mut GraphSty
                 committed |= compact_number(ui, "Y line width", &mut style.axis_y_line_mm, 0.5, " mm", 0.1..=20.0);
                 committed |= basic_visibility(ui, "Y-axis line visibility", &mut style.axis_y_visible);
             });
-            ui.horizontal(|ui| {
-                property_popover(ui, "y-axis-text", "Text", |ui| advanced_text(ui, "Y-axis tick labels", &mut style.tick_y_details, true, false));
-                committed |= compact_number(ui, "Size", &mut style.tick_y_pt, 8.0, " pt", 0.1..=100.0);
-                committed |= basic_visibility(ui, "Y-axis tick labels visibility", &mut style.tick_y_visible);
-            });
-            committed |= face_row(ui, "Y-axis tick labels face", &mut style.tick_y_details.face);
-            ui.horizontal(|ui| {
-                property_popover(ui, "y-axis-title", "Title", |ui| advanced_text(ui, "Y-axis title", &mut style.axis_title_y_details, false, true));
-                committed |= compact_number(ui, "Title size", &mut style.axis_title_y_pt, 10.0, " pt", 0.1..=100.0);
-                committed |= basic_visibility(ui, "Y-axis title visibility", &mut style.axis_title_y_visible);
-            });
-            committed |= face_row(ui, "Y-axis title face", &mut style.axis_title_y_details.face);
+            committed |= basic_text_row(
+                ui,
+                TextRowSpec {
+                    id: "y-axis-text",
+                    label: "Text",
+                    detail_label: "Y-axis tick labels",
+                    visibility_label: "Y-axis tick labels visibility",
+                    tick: true,
+                    title: false,
+                },
+                &mut style.tick_y_pt,
+                &mut style.tick_y_visible,
+                &mut style.tick_y_details,
+                8.0,
+            );
+            committed |= basic_text_row(
+                ui,
+                TextRowSpec {
+                    id: "y-axis-title",
+                    label: "Title",
+                    detail_label: "Y-axis title",
+                    visibility_label: "Y-axis title visibility",
+                    tick: false,
+                    title: true,
+                },
+                &mut style.axis_title_y_pt,
+                &mut style.axis_title_y_visible,
+                &mut style.axis_title_y_details,
+                10.0,
+            );
         }
     });
     committed
@@ -378,7 +431,14 @@ fn show_selected_graph_settings(app: &mut crate::VectorcraftApp, ui: &mut egui::
             egui::CollapsingHeader::new("Title").id_salt(("graph-component", "title")).default_open(true).show(ui, |ui| {
                 committed |= basic_text_row(
                     ui,
-                    TextRowSpec { id: "title", label: "Title", tick: false, title: true },
+                    TextRowSpec {
+                        id: "title",
+                        label: "Title",
+                        detail_label: "Title",
+                        visibility_label: "Title visibility",
+                        tick: false,
+                        title: true,
+                    },
                     &mut draft.plot_title_pt,
                     &mut draft.plot_title_visible,
                     &mut draft.title_details,
@@ -386,7 +446,14 @@ fn show_selected_graph_settings(app: &mut crate::VectorcraftApp, ui: &mut egui::
                 );
                 committed |= basic_text_row(
                     ui,
-                    TextRowSpec { id: "subtitle", label: "Subtitle", tick: false, title: false },
+                    TextRowSpec {
+                        id: "subtitle",
+                        label: "Subtitle",
+                        detail_label: "Subtitle",
+                        visibility_label: "Subtitle visibility",
+                        tick: false,
+                        title: false,
+                    },
                     &mut draft.subtitle_pt,
                     &mut draft.subtitle_visible,
                     &mut draft.subtitle_details,
@@ -394,14 +461,21 @@ fn show_selected_graph_settings(app: &mut crate::VectorcraftApp, ui: &mut egui::
                 );
                 committed |= basic_text_row(
                     ui,
-                    TextRowSpec { id: "caption", label: "Caption", tick: false, title: false },
+                    TextRowSpec {
+                        id: "caption",
+                        label: "Caption",
+                        detail_label: "Caption",
+                        visibility_label: "Caption visibility",
+                        tick: false,
+                        title: false,
+                    },
                     &mut draft.caption_pt,
                     &mut draft.caption_visible,
                     &mut draft.caption_details,
                     8.0,
                 );
                 let before = draft.plot_title_position;
-                ui.horizontal(|ui| {
+                ui.horizontal_wrapped(|ui| {
                     let label = ui.label("Position");
                     egui::ComboBox::from_id_salt(("graph-title-position", panel.panel_id))
                         .selected_text(draft.plot_title_position.map_or("R default", TitlePosition::label))
@@ -417,7 +491,14 @@ fn show_selected_graph_settings(app: &mut crate::VectorcraftApp, ui: &mut egui::
                 committed |= before != draft.plot_title_position;
                 committed |= basic_text_row(
                     ui,
-                    TextRowSpec { id: "facet-text", label: "Facet text", tick: false, title: false },
+                    TextRowSpec {
+                        id: "facet-text",
+                        label: "Facet text",
+                        detail_label: "Facet text",
+                        visibility_label: "Facet text visibility",
+                        tick: false,
+                        title: false,
+                    },
                     &mut draft.strip_text_pt,
                     &mut draft.strip_text_visible,
                     &mut draft.strip_text_details,
@@ -451,7 +532,14 @@ fn show_selected_graph_settings(app: &mut crate::VectorcraftApp, ui: &mut egui::
                 }
                 committed |= basic_text_row(
                     ui,
-                    TextRowSpec { id: "legend-title", label: "Title", tick: false, title: true },
+                    TextRowSpec {
+                        id: "legend-title",
+                        label: "Title",
+                        detail_label: "Legend title",
+                        visibility_label: "Legend title visibility",
+                        tick: false,
+                        title: true,
+                    },
                     &mut draft.legend_title_pt,
                     &mut draft.legend_title_visible,
                     &mut draft.legend_title_details,
@@ -459,16 +547,22 @@ fn show_selected_graph_settings(app: &mut crate::VectorcraftApp, ui: &mut egui::
                 );
                 committed |= basic_text_row(
                     ui,
-                    TextRowSpec { id: "legend-text", label: "Text", tick: false, title: false },
+                    TextRowSpec {
+                        id: "legend-text",
+                        label: "Text",
+                        detail_label: "Legend text",
+                        visibility_label: "Legend text visibility",
+                        tick: false,
+                        title: false,
+                    },
                     &mut draft.legend_text_pt,
                     &mut draft.legend_text_visible,
                     &mut draft.legend_text_details,
                     8.0,
                 );
-                ui.horizontal(|ui| {
-                    property_popover(ui, "legend-key", "Key", |ui| {
-                        let mut changed = number_row(ui, "Key width", &mut draft.legend_key_width_mm, 5.0, " mm", 0.0..=100.0);
-                        changed |= number_row(ui, "Key height", &mut draft.legend_key_height_mm, 5.0, " mm", 0.0..=100.0);
+                ui.horizontal_wrapped(|ui| {
+                    let (popover, key_label) = property_popover_with_response(ui, "legend-key", "Key", |ui| {
+                        let mut changed = number_row(ui, "Key height", &mut draft.legend_key_height_mm, 5.0, " mm", 0.0..=100.0);
                         changed |= string_row(ui, "Key fill", &mut draft.legend_key_background, "#ffffff");
                         changed |= string_row(ui, "Legend fill", &mut draft.legend_background, "#ffffff");
                         changed |= number_row(ui, "Spacing X", &mut draft.legend_spacing_x_mm, 2.0, " mm", 0.0..=100.0);
@@ -476,10 +570,12 @@ fn show_selected_graph_settings(app: &mut crate::VectorcraftApp, ui: &mut egui::
                         changed |= margins_row(ui, "Legend margins", &mut draft.legend_margin_mm);
                         changed
                     });
-                    committed |= compact_number(ui, "Key size", &mut draft.legend_key_mm, 5.0, " mm", 0.1..=100.0);
+                    committed |= popover.unwrap_or(false);
+                    committed |= compact_number_control(ui, &mut draft.legend_key_mm, 5.0, " mm", 0.1..=100.0, Some(key_label.id));
+                    committed |= compact_number(ui, "Key width", &mut draft.legend_key_width_mm, 5.0, " mm", 0.0..=100.0);
                 });
                 let before = draft.legend_direction;
-                ui.horizontal(|ui| {
+                ui.horizontal_wrapped(|ui| {
                     ui.label("Direction");
                     egui::ComboBox::from_id_salt(("graph-legend-direction", panel.panel_id))
                         .selected_text(draft.legend_direction.map_or("R default", LegendDirection::label))
@@ -495,7 +591,7 @@ fn show_selected_graph_settings(app: &mut crate::VectorcraftApp, ui: &mut egui::
             });
             crate::widgets::divider(ui);
             egui::CollapsingHeader::new("Plot").id_salt(("graph-component", "plot")).default_open(true).show(ui, |ui| {
-                ui.horizontal(|ui| {
+                ui.horizontal_wrapped(|ui| {
                     let (popover, label_response) = property_popover_with_response(ui, "major-grid", "Major grid", |ui| {
                         let mut changed = string_row(ui, "Grid colour", &mut draft.major_grid_colour, "grey85");
                         changed |= visibility_row(ui, "X major grid", &mut draft.major_grid_x_visible);
@@ -506,7 +602,7 @@ fn show_selected_graph_settings(app: &mut crate::VectorcraftApp, ui: &mut egui::
                     committed |= compact_number_control(ui, &mut draft.major_grid_width_mm, 0.2, " mm", 0.01..=20.0, Some(label_response.id));
                     committed |= basic_visibility(ui, "Major grid visibility", &mut draft.major_grid_visible);
                 });
-                ui.horizontal(|ui| {
+                ui.horizontal_wrapped(|ui| {
                     let (popover, label_response) = property_popover_with_response(ui, "minor-grid", "Minor grid", |ui| {
                         let mut changed = string_row(ui, "Grid colour", &mut draft.minor_grid_colour, "grey90");
                         changed |= visibility_row(ui, "X minor grid", &mut draft.minor_grid_x_visible);

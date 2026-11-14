@@ -769,6 +769,8 @@ fn graph_dock_shows_panel_controls_and_empty_state_at_narrow_width() {
     assert!(h.query_by_label("X-axis tick labels visibility").is_some());
     assert!(h.query_by_label("X line width").is_some());
     assert!(h.query_by_label("Y line width").is_some());
+    assert!(h.query_all_by_role_and_label(Role::ComboBox, "Title font face").next().is_some(), "font face remains a direct, accessible control");
+    assert!(h.query_by_label("Key width").is_some(), "key width is exposed beside key size");
     assert!(h.query_all_by_label("Position").count() >= 2, "title and legend positions should be accessible");
 
     let line = h.query_all_by_label("Line").next().expect("X axis line has advanced settings");
@@ -792,7 +794,7 @@ fn graph_dock_shows_panel_controls_and_empty_state_at_narrow_width() {
 
     h.query_all_by_label("Key").next().expect("legend key has advanced settings").click_accesskit();
     h.run_steps(2);
-    for control in ["Key width", "Key height", "Key fill", "Legend fill", "Spacing X", "Spacing Y", "Legend margins"] {
+    for control in ["Key height", "Key fill", "Legend fill", "Spacing X", "Spacing Y", "Legend margins"] {
         assert!(h.query_all_by_label(control).next().is_some(), "Legend Key popover must expose {control}");
     }
     h.query_all_by_label("Key").next().unwrap().click_accesskit();
@@ -805,6 +807,117 @@ fn graph_dock_shows_panel_controls_and_empty_state_at_narrow_width() {
     h.run_steps(3);
     assert!(h.query_by_label("Select an R-linked plot on the artboard to edit its graph settings.").is_some());
 }
+
+#[test]
+fn graph_inspector_compact_controls_render_at_narrow_medium_and_wide_widths() {
+    for (width, scenario) in [(900.0, "narrow"), (1200.0, "medium"), (1600.0, "wide")] {
+        let height = 1600.0;
+        let mut h = linked_workspace_harness(width, height, 1.0);
+        let panel = h.state().scientific.linked_panels[0].clone();
+        let key = (panel.document_uid, panel.panel_id);
+        h.state_mut().scientific.graph_drafts.insert(
+            key,
+            crate::scientific::graph_style::GraphStyle {
+                plot_title_pt: Some(14.0),
+                title_details: crate::scientific::graph_style::TextDetails {
+                    face: Some(crate::scientific::graph_style::FontFace::Bold),
+                    ..Default::default()
+                },
+                subtitle_pt: Some(11.0),
+                subtitle_details: crate::scientific::graph_style::TextDetails {
+                    face: Some(crate::scientific::graph_style::FontFace::Italic),
+                    ..Default::default()
+                },
+                caption_pt: Some(9.0),
+                caption_details: crate::scientific::graph_style::TextDetails {
+                    face: Some(crate::scientific::graph_style::FontFace::Plain),
+                    ..Default::default()
+                },
+                tick_x_pt: Some(8.0),
+                tick_x_details: crate::scientific::graph_style::TextDetails {
+                    face: Some(crate::scientific::graph_style::FontFace::Plain),
+                    ..Default::default()
+                },
+                tick_y_pt: Some(8.0),
+                tick_y_details: crate::scientific::graph_style::TextDetails {
+                    face: Some(crate::scientific::graph_style::FontFace::Plain),
+                    ..Default::default()
+                },
+                axis_title_x_pt: Some(10.0),
+                axis_title_x_details: crate::scientific::graph_style::TextDetails {
+                    face: Some(crate::scientific::graph_style::FontFace::Bold),
+                    ..Default::default()
+                },
+                axis_title_y_pt: Some(10.0),
+                axis_title_y_details: crate::scientific::graph_style::TextDetails {
+                    face: Some(crate::scientific::graph_style::FontFace::Bold),
+                    ..Default::default()
+                },
+                legend_title_pt: Some(10.0),
+                legend_title_details: crate::scientific::graph_style::TextDetails {
+                    face: Some(crate::scientific::graph_style::FontFace::Bold),
+                    ..Default::default()
+                },
+                legend_key_mm: Some(5.0),
+                legend_key_width_mm: Some(5.0),
+                major_grid_width_mm: Some(0.2),
+                minor_grid_width_mm: Some(0.1),
+                ..Default::default()
+            },
+        );
+        h.state_mut().run("select.set", json!({"ids": [panel.panel_id]})).unwrap();
+        h.run_steps(5);
+
+        let title_size = h.get_all_by_role_and_label(Role::SpinButton, "Title").next().unwrap().rect();
+        let title_face = h.get_all_by_role_and_label(Role::ComboBox, "Title font face").next().unwrap().rect();
+        let top_controls = [
+            ("X", h.get_by_role_and_label(Role::TextInput, "X position").rect()),
+            ("Y", h.get_by_role_and_label(Role::TextInput, "Y position").rect()),
+            ("W", h.get_by_role_and_label(Role::TextInput, "Output width").rect()),
+            ("H", h.get_by_role_and_label(Role::TextInput, "Output height").rect()),
+            ("Title size", title_size),
+            ("Title face", title_face),
+        ];
+        for (label, rect) in top_controls {
+            assert!(rect.left() >= -1.0 && rect.right() <= width + 1.0, "{label} is clipped at {width}px: {rect:?}");
+            assert!(rect.top() >= -1.0 && rect.bottom() <= height + 1.0, "{label} is vertically clipped: {rect:?}");
+        }
+        let title_face_same_row = (title_size.center().y - title_face.center().y).abs() < 2.0;
+        if width >= 1200.0 {
+            assert!(
+                title_face_same_row,
+                "title size and face should share a row when the inspector has room at {width}px: {title_size:?} / {title_face:?}"
+            );
+        }
+        let top_measurements = json!({
+            "windowWidth": width,
+            "titleFontFaceSharesRow": title_face_same_row,
+            "controls": top_controls.iter().map(|(label, rect)| json!({"label": label, "rect": [rect.left(), rect.top(), rect.width(), rect.height()]})).collect::<Vec<_>>()
+        });
+        capture(&mut h, BottomTab::LinkedPanels, width, 1.0, &format!("graph-inspector-{scenario}-top"), &top_measurements);
+
+        h.hover_at(egui::pos2(width - 30.0, height - 50.0));
+        h.event(egui::Event::MouseWheel {
+            unit: egui::MouseWheelUnit::Point,
+            delta: vec2(0.0, -20_000.0),
+            modifiers: egui::Modifiers::NONE,
+            phase: egui::TouchPhase::Move,
+            source: egui::MouseWheelSource::Unknown,
+        });
+        h.run_steps(5);
+        let bottom_controls = [("Key width", h.get_by_label("Key width").rect()), ("Copy as R Code", h.get_by_label("Copy as R Code").rect())];
+        for (label, rect) in bottom_controls {
+            assert!(rect.left() >= -1.0 && rect.right() <= width + 1.0, "{label} is clipped at {width}px: {rect:?}");
+            assert!(rect.top() >= -1.0 && rect.bottom() <= height + 1.0, "{label} is not reachable by scrolling: {rect:?}");
+        }
+        let bottom_measurements = json!({
+            "windowWidth": width,
+            "controls": bottom_controls.iter().map(|(label, rect)| json!({"label": label, "rect": [rect.left(), rect.top(), rect.width(), rect.height()]})).collect::<Vec<_>>()
+        });
+        capture(&mut h, BottomTab::LinkedPanels, width, 1.0, &format!("graph-inspector-{scenario}-bottom"), &bottom_measurements);
+    }
+}
+
 #[test]
 fn graph_visibility_control_and_apply_queue_keep_font_size() {
     let mut h = linked_workspace_harness(900.0, 720.0, 1.0);
