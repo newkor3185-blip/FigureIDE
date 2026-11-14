@@ -250,10 +250,9 @@ pub(crate) fn generate(style: &GraphStyle, variable: &str) -> Result<GeneratedCo
     if theme.is_empty() {
         return Ok(GeneratedCode { code: None, unsupported });
     }
-    let mut lines = vec![format!("get({}, envir = parent.frame(), inherits = TRUE)", r_string(variable))];
-    if !theme.is_empty() {
-        lines.push(format!("  + ggplot2::theme(\n{}\n    )", named_arguments(&theme, 6)));
-    }
+    let expression =
+        format!("get({}, envir = parent.frame(), inherits = TRUE) + ggplot2::theme(\n{}\n)", r_string(variable), named_arguments(&theme, 6));
+    let mut lines = vec![expression];
     if style.axis_x_line_mm.is_some()
         || style.axis_y_line_mm.is_some()
         || style.axis_x_tick_width_mm.is_some()
@@ -490,7 +489,8 @@ mod tests {
         assert!(code.contains("legend.position = \"top\""));
         assert!(code.contains("panel.grid.major.x = ggplot2::element_blank()"));
         assert!(code.contains("panel.grid.minor.x = ggplot2::element_blank()"));
-        assert!(code.contains("get(\"plot_A\""));
+        assert!(code.contains("get(\"plot_A\", envir = parent.frame(), inherits = TRUE) + ggplot2::theme("));
+        assert!(!code.contains("\n  + ggplot2::theme("), "the continuation operator must follow the plot expression");
     }
 
     #[test]
