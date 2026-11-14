@@ -1,0 +1,85 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#f6f5f0">
+  <meta name="description" content="FigureIDE — R 분석과 편집 가능한 벡터 그래픽을 한곳에서 다루는 과학 그림 편집기.">
+  <title>FigureIDE — 연구 그림을 만들고 다듬는 작업 공간</title>
+  <style>
+    :root{--ink:#172321;--muted:#53615d;--paper:#f6f5f0;--card:#fffefa;--green:#b4f27b;--line:#d9ddd5;--dark:#14211e}
+    *{box-sizing:border-box}html{scroll-behavior:smooth}body{margin:0;background:var(--paper);color:var(--ink);font-family:Inter,ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif;line-height:1.6}
+    a{color:inherit} .wrap{width:min(1120px,calc(100% - 40px));margin:auto}
+    header{padding:22px 0;border-bottom:1px solid var(--line)}.nav{display:flex;align-items:center;justify-content:space-between;gap:22px}.brand{display:flex;align-items:center;gap:12px;text-decoration:none;font-weight:800;letter-spacing:-.04em}.brand img{width:38px;height:38px;object-fit:contain}.navlinks{display:flex;gap:24px;color:var(--muted);font-size:.92rem}.navlinks a{text-decoration:none}.navlinks a:hover{color:var(--ink)}
+    .hero{padding:84px 0 64px;display:grid;grid-template-columns:1.05fr .95fr;align-items:center;gap:50px}.eyebrow{font-size:.78rem;font-weight:800;letter-spacing:.14em;text-transform:uppercase;color:#536d55}.hero h1{font-size:clamp(2.8rem,6vw,5.25rem);line-height:.98;letter-spacing:-.065em;margin:18px 0 22px;max-width:700px}.hero p{font-size:1.15rem;color:var(--muted);max-width:580px}.actions{display:flex;flex-wrap:wrap;gap:12px;margin-top:30px}.button{display:inline-flex;align-items:center;justify-content:center;padding:13px 19px;border-radius:8px;text-decoration:none;font-weight:750;border:1px solid var(--ink);background:var(--ink);color:white}.button:hover{transform:translateY(-1px)}.button.light{background:transparent;color:var(--ink)}.hero-art{background:#e8eddf;border:1px solid var(--line);border-radius:18px;padding:18px;box-shadow:0 18px 54px #20382a16}.hero-art img{display:block;width:100%;border-radius:10px}.hero-art figcaption{padding:10px 3px 0;color:var(--muted);font-size:.82rem}
+    section{padding:64px 0}.section-head{display:flex;justify-content:space-between;align-items:end;gap:24px;margin-bottom:26px}.section-head h2{font-size:clamp(1.8rem,3vw,2.7rem);letter-spacing:-.05em;line-height:1.1;margin:8px 0}.section-head p{color:var(--muted);max-width:480px;margin:0}.grid{display:grid;grid-template-columns:repeat(3,1fr);gap:14px}.card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:22px}.card .num{font-size:.8rem;color:#66786d;font-weight:800;letter-spacing:.1em}.card h3{font-size:1.1rem;margin:18px 0 7px}.card p{margin:0;color:var(--muted);font-size:.94rem}
+    .dark{background:var(--dark);color:#f4f6ee}.dark .section-head p,.dark .card p{color:#b7c1ba}.dark .eyebrow{color:var(--green)}.dark .card{background:#1c2c28;border-color:#34433e}.dark .card .num{color:var(--green)}
+    .demo{display:grid;grid-template-columns:1.15fr .85fr;gap:32px;align-items:center}.video{position:relative;display:block;border-radius:14px;overflow:hidden;background:#26322e}.video img{display:block;width:100%;aspect-ratio:16/9;object-fit:cover;opacity:.88;transition:opacity .2s}.video:hover img{opacity:1}.play{position:absolute;inset:0;display:grid;place-items:center;color:white;font-size:3rem;text-shadow:0 2px 16px #000}.demo-copy h2{font-size:2.3rem;line-height:1.08;letter-spacing:-.05em;margin:12px 0}.demo-copy p{color:#b7c1ba}.demo-copy a{color:var(--green)}
+    .downloads{display:grid;grid-template-columns:repeat(3,1fr);gap:14px}.download{display:flex;flex-direction:column;min-height:255px}.download h3{margin:10px 0 2px}.status{display:inline-flex;width:max-content;border-radius:999px;background:#e9eee5;padding:4px 9px;font-size:.75rem;font-weight:800;color:#435a46}.download p{color:var(--muted);font-size:.91rem;flex:1}.download .button{margin-top:12px;font-size:.88rem;padding:10px 13px}.notice{margin-top:16px;border-left:3px solid #829a77;padding:10px 14px;color:var(--muted);font-size:.9rem;background:#eef0e9}
+    .screen{display:grid;grid-template-columns:1fr 1fr;gap:14px}.screen figure{margin:0;background:var(--card);border:1px solid var(--line);border-radius:12px;overflow:hidden}.screen img{display:block;width:100%;height:auto}.screen figcaption{padding:12px 14px;color:var(--muted);font-size:.86rem}
+    .cta{padding:28px;background:var(--green);border-radius:14px;display:flex;align-items:center;justify-content:space-between;gap:24px}.cta h2{font-size:1.8rem;letter-spacing:-.04em;margin:0}.cta p{margin:5px 0 0;color:#384737}.cta .button{background:var(--ink)}
+    footer{padding:30px 0 44px;border-top:1px solid var(--line);color:var(--muted);font-size:.86rem}.foot{display:flex;justify-content:space-between;gap:24px;flex-wrap:wrap}.footlinks{display:flex;gap:18px}.foot a{color:var(--ink)}
+    @media(max-width:780px){.hero,.demo{grid-template-columns:1fr}.hero{padding:58px 0 40px;gap:30px}.grid,.downloads{grid-template-columns:1fr}.section-head{display:block}.section-head p{margin-top:12px}.screen{grid-template-columns:1fr}.navlinks{gap:12px;font-size:.82rem}.cta{align-items:flex-start;flex-direction:column}}
+    @media(max-width:460px){.wrap{width:min(100% - 28px,1120px)}.navlinks a:nth-child(2){display:none}.hero h1{font-size:2.8rem}}
+  </style>
+</head>
+<body>
+  <header>
+    <div class="wrap nav">
+      <a class="brand" href="#" aria-label="FigureIDE 홈"><img src="assets/app-icon/figureide-logo.png" alt=""><span>FigureIDE</span></a>
+      <nav class="navlinks" aria-label="주요 메뉴"><a href="#features">기능</a><a href="#workflow">사용 흐름</a><a href="#download">다운로드</a><a href="https://github.com/newkor3185-blip/FigureIDE">GitHub ↗</a></nav>
+    </div>
+  </header>
+  <main>
+    <div class="wrap hero">
+      <div>
+        <div class="eyebrow">Scientific figures, in one workspace</div>
+        <h1>분석에서<br>그림 완성까지.</h1>
+        <p>FigureIDE는 R 분석과 편집 가능한 벡터 그림을 한 작업 공간에 모읍니다. 그래프를 다듬고, 패널을 구성하고, 논문용 SVG와 PDF로 내보내세요.</p>
+        <div class="actions"><a class="button" href="#download">다운로드 안내 보기 ↓</a><a class="button light" href="https://youtu.be/ay1fmnCTgsg">데모 영상 보기 ↗</a></div>
+      </div>
+      <figure class="hero-art"><img src="docs/images/figureide/figureIDE_workspace.png" alt="R 스크립트, 과학 그림 캔버스, Plot Registry를 함께 보여주는 FigureIDE 화면"><figcaption>R 코드, 그래프와 벡터 편집 도구를 한 화면에서</figcaption></figure>
+    </div>
+    <section id="features" class="dark">
+      <div class="wrap">
+        <div class="section-head"><div><div class="eyebrow">One connected workflow</div><h2>연구 그림에 필요한 도구를<br>한곳에 모았습니다.</h2></div><p>R 기반 분석과 벡터 편집을 오가며 생기는 번거로움을 줄이고, 그림과 프로젝트를 함께 정리합니다.</p></div>
+        <div class="grid">
+          <article class="card"><div class="num">01 / ANALYZE</div><h3>R 스크립트와 콘솔</h3><p>스크립트를 편집하고 실행해 결과와 R 작업 환경을 확인합니다.</p></article>
+          <article class="card"><div class="num">02 / REFINE</div><h3>연결된 그래프 편집</h3><p>ggplot 그래프를 관리하고 크기와 스타일을 조정합니다. 필요할 때 R에서 다시 그릴 수 있습니다.</p></article>
+          <article class="card"><div class="num">03 / COMPOSE</div><h3>벡터 그림 구성</h3><p>주석을 더하고 패널을 배치한 뒤, 편집 가능한 FigureIDE 파일과 SVG/PDF로 저장합니다.</p></article>
+        </div>
+      </div>
+    </section>
+    <section id="workflow">
+      <div class="wrap demo">
+        <a class="video" href="https://youtu.be/ay1fmnCTgsg" aria-label="YouTube에서 FigureIDE 데모 보기"><img src="https://img.youtube.com/vi/ay1fmnCTgsg/maxresdefault.jpg" alt="FigureIDE 데모 영상 미리보기"><span class="play" aria-hidden="true">▶</span></a>
+        <div class="demo-copy"><div class="eyebrow">See it in action</div><h2>R 그래프가<br>논문 그림이 되는 과정.</h2><p>R과 ggplot2로 만든 시각화를 가져와 FigureIDE에서 편집하고 내보내는 흐름을 영상으로 확인하세요.</p><a href="https://youtu.be/ay1fmnCTgsg">YouTube에서 데모 보기 ↗</a></div>
+      </div>
+    </section>
+    <section>
+      <div class="wrap">
+        <div class="section-head"><div><div class="eyebrow">Inside FigureIDE</div><h2>코드와 캔버스를 오가며 작업</h2></div><p>프로젝트 안에 스크립트와 편집 가능한 그림을 함께 보관할 수 있습니다.</p></div>
+        <div class="screen">
+          <figure><img src="docs/images/figureide/figureIDE-R-script.png" alt="FigureIDE R 스크립트 편집기와 Environment 패널"><figcaption>스크립트를 실행하고 R 작업 환경을 확인합니다.</figcaption></figure>
+          <figure><img src="docs/images/figureide/figureIDE-Graph-inspector.png" alt="FigureIDE Graph Inspector의 그래프 조정 패널"><figcaption>선택한 그래프의 설정을 살펴보고 조정합니다.</figcaption></figure>
+        </div>
+      </div>
+    </section>
+    <section id="download">
+      <div class="wrap">
+        <div class="section-head"><div><div class="eyebrow">Download & try</div><h2>운영체제별 다운로드</h2></div><p>현재 개발·검증 단계에 맞춰 배포 경로와 알려진 제한을 안내합니다.</p></div>
+        <div class="downloads">
+          <article class="card download"><span class="status">릴리스 준비 중</span><h3>Windows · x64</h3><p>검증된 휴대용 ZIP 릴리스가 등록되면 이곳에서 받을 수 있습니다. 현재 GitHub Releases에서 공개된 빌드를 확인하세요.</p><a class="button" href="https://github.com/newkor3185-blip/FigureIDE/releases">릴리스 확인 ↗</a></article>
+          <article class="card download"><span class="status">개발 아티팩트</span><h3>macOS · Apple Silicon / Intel</h3><p>Actions 실행 결과에서 해당 아키텍처의 ZIP 아티팩트를 받을 수 있습니다. 아직 공증된 최종 사용자용 릴리스가 아닙니다.</p><a class="button" href="https://github.com/newkor3185-blip/FigureIDE/actions/workflows/figureide-macos.yml">macOS 빌드 보기 ↗</a></article>
+          <article class="card download"><span class="status">실험적 · Linux x86_64</span><h3>Linux</h3><p>수동 실행한 Linux 워크플로의 아티팩트를 확인하세요. Ubuntu XFCE 환경에서 검증된 실험용 빌드이며 시스템 라이브러리가 필요합니다.</p><a class="button" href="https://github.com/newkor3185-blip/FigureIDE/actions/workflows/figureide-linux-release.yml">Linux 빌드 보기 ↗</a></article>
+        </div>
+        <div class="notice"><strong>R은 별도 설치 항목입니다.</strong> 벡터 편집, .fide 저장, 일반 SVG/PDF 내보내기는 R 없이도 사용할 수 있습니다. R 스크립트 실행과 연결 그래프 새로고침에는 R과 필요한 R 패키지가 필요합니다. macOS 개발 빌드는 공증되지 않았으며, Windows용 검증 릴리스도 아직 확인되지 않았습니다.</div>
+      </div>
+    </section>
+    <section>
+      <div class="wrap cta"><div><h2>소스 코드와 개발 현황</h2><p>기능, 빌드 안내, 알려진 제한과 변경 내역을 확인하세요.</p></div><a class="button" href="https://github.com/newkor3185-blip/FigureIDE">GitHub 저장소 열기 ↗</a></div>
+    </section>
+  </main>
+  <footer><div class="wrap foot"><span>© FigureIDE · 오픈소스 연구 도구</span><div class="footlinks"><a href="https://github.com/newkor3185-blip/FigureIDE/issues">버그 제보</a><a href="https://github.com/newkor3185-blip/FigureIDE/blob/main/NOTICE">저작권·고지</a><a href="https://github.com/newkor3185-blip/FigureIDE/blob/main/LICENSE-MIT">라이선스</a></div></div></footer>
+</body>
+</html>
