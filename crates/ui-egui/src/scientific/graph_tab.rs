@@ -185,6 +185,209 @@ pub(crate) fn show(app: &mut crate::VectorcraftApp, ui: &mut egui::Ui) {
         .show(ui, |ui| show_selected_graph_settings(app, ui));
 }
 
+fn category_row(ui: &mut egui::Ui, title: &str, summary: &str) -> egui::Response {
+    let width = ui.available_width().max(1.0);
+    let narrow = width < 280.0;
+    let height = if narrow { 44.0 } else { 34.0 };
+    let (rect, _) = ui.allocate_exact_size(egui::vec2(width, height), egui::Sense::hover());
+    let id = ui.make_persistent_id(("graph-settings-category", title));
+    let response = ui.interact(rect, id, egui::Sense::click());
+    let t = crate::theme::Tokens::get(ui.ctx());
+    let open = ui.ctx().data(|data| data.get_temp::<u64>(response.id.with("popover")).is_some());
+    let fill = if open || response.is_pointer_button_down_on() {
+        t.tool_active
+    } else if response.hovered() {
+        t.hover
+    } else {
+        t.button
+    };
+    ui.painter().rect_filled(rect, egui::CornerRadius::same(5), fill);
+    let icon_center = rect.right_center() - egui::vec2(17.0, 0.0);
+    crate::icons::paint(ui, "settings", egui::Rect::from_center_size(icon_center, egui::vec2(14.0, 14.0)), t.icon);
+    if narrow {
+        ui.painter().text(rect.left_top() + egui::vec2(9.0, 6.0), egui::Align2::LEFT_TOP, title, egui::FontId::proportional(12.5), t.text_strong);
+        ui.painter().with_clip_rect(rect.shrink2(egui::vec2(9.0, 0.0))).text(
+            rect.left_top() + egui::vec2(9.0, 25.0),
+            egui::Align2::LEFT_TOP,
+            summary,
+            egui::FontId::proportional(10.5),
+            t.text_dim,
+        );
+    } else {
+        ui.painter().text(
+            rect.left_center() + egui::vec2(9.0, 0.0),
+            egui::Align2::LEFT_CENTER,
+            title,
+            egui::FontId::proportional(12.5),
+            t.text_strong,
+        );
+        ui.painter().with_clip_rect(rect.shrink2(egui::vec2(9.0, 0.0))).text(
+            rect.right_center() - egui::vec2(34.0, 0.0),
+            egui::Align2::RIGHT_CENTER,
+            summary,
+            egui::FontId::proportional(11.0),
+            t.text_dim,
+        );
+    }
+    response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, ui.is_enabled(), title));
+    response.on_hover_text(format!("Edit {title} settings · {summary}"))
+}
+
+fn category_popover(ui: &mut egui::Ui, title: &str, summary: &str, enabled: bool, content: impl FnOnce(&mut egui::Ui)) {
+    if !enabled {
+        ui.add_enabled_ui(false, |ui| {
+            category_row(ui, title, summary);
+        });
+        return;
+    }
+    let response = category_row(ui, title, summary);
+    crate::widgets::popover(&response, response.clicked(), |ui| {
+        let screen = ui.ctx().content_rect();
+        let width = (screen.width() - 28.0).clamp(1.0, 360.0);
+        let height = (screen.height() - 36.0).clamp(1.0, 560.0);
+        ui.set_width(width);
+        ui.set_max_width(width);
+        egui::ScrollArea::vertical().max_height(height).auto_shrink([false, false]).show(ui, |ui| {
+            content(ui);
+        });
+    });
+}
+
+fn detail_overrides(details: &TextDetails) -> usize {
+    [
+        details.family.is_some(),
+        details.face.is_some(),
+        details.colour.is_some(),
+        details.angle.is_some(),
+        details.hjust.is_some(),
+        details.vjust.is_some(),
+    ]
+    .into_iter()
+    .filter(|set| *set)
+    .count()
+}
+
+fn override_summary(count: usize) -> String {
+    if count == 0 { "R defaults".into() } else { format!("{count} overrides") }
+}
+
+fn titles_summary(style: &GraphStyle) -> String {
+    let count = [
+        style.plot_title_pt.is_some(),
+        style.plot_title_visible.is_some(),
+        style.subtitle_pt.is_some(),
+        style.subtitle_visible.is_some(),
+        style.caption_pt.is_some(),
+        style.caption_visible.is_some(),
+        style.axis_title_x_pt.is_some(),
+        style.axis_title_x_visible.is_some(),
+        style.axis_title_y_pt.is_some(),
+        style.axis_title_y_visible.is_some(),
+        style.tick_x_pt.is_some(),
+        style.tick_x_visible.is_some(),
+        style.tick_y_pt.is_some(),
+        style.tick_y_visible.is_some(),
+        style.strip_text_pt.is_some(),
+        style.strip_text_visible.is_some(),
+        style.plot_title_position.is_some(),
+    ]
+    .into_iter()
+    .filter(|set| *set)
+    .count()
+        + detail_overrides(&style.title_details)
+        + detail_overrides(&style.subtitle_details)
+        + detail_overrides(&style.caption_details)
+        + detail_overrides(&style.axis_title_x_details)
+        + detail_overrides(&style.axis_title_y_details)
+        + detail_overrides(&style.tick_x_details)
+        + detail_overrides(&style.tick_y_details)
+        + detail_overrides(&style.strip_text_details);
+    override_summary(count)
+}
+
+fn axes_summary(style: &GraphStyle) -> String {
+    let count = [
+        style.axis_x_line_mm.is_some(),
+        style.axis_y_line_mm.is_some(),
+        style.axis_x_visible.is_some(),
+        style.axis_y_visible.is_some(),
+        style.axis_x_ticks_visible.is_some(),
+        style.axis_y_ticks_visible.is_some(),
+        style.axis_x_line_colour.is_some(),
+        style.axis_y_line_colour.is_some(),
+        style.axis_x_tick_colour.is_some(),
+        style.axis_y_tick_colour.is_some(),
+        style.axis_x_tick_width_mm.is_some(),
+        style.axis_y_tick_width_mm.is_some(),
+        style.axis_x_tick_length_mm.is_some(),
+        style.axis_y_tick_length_mm.is_some(),
+    ]
+    .into_iter()
+    .filter(|set| *set)
+    .count();
+    override_summary(count)
+}
+
+fn legend_summary(style: &GraphStyle) -> String {
+    let count = [
+        style.legend_title_pt.is_some(),
+        style.legend_text_pt.is_some(),
+        style.legend_title_visible.is_some(),
+        style.legend_text_visible.is_some(),
+        style.legend_position.is_some(),
+        style.legend_key_mm.is_some(),
+        style.inside_x.is_some(),
+        style.inside_y.is_some(),
+        style.legend_direction.is_some(),
+        style.legend_justification.is_some(),
+        style.legend_key_width_mm.is_some(),
+        style.legend_key_height_mm.is_some(),
+        style.legend_key_background.is_some(),
+        style.legend_background.is_some(),
+        style.legend_spacing_x_mm.is_some(),
+        style.legend_spacing_y_mm.is_some(),
+        style.legend_margin_mm.is_some(),
+    ]
+    .into_iter()
+    .filter(|set| *set)
+    .count()
+        + detail_overrides(&style.legend_title_details)
+        + detail_overrides(&style.legend_text_details);
+    if count == 0 {
+        "R defaults".into()
+    } else {
+        format!("{} · {count} overrides", style.legend_position.map_or("R default", LegendPosition::label))
+    }
+}
+
+fn colors_summary(style: &GraphStyle) -> String {
+    let count = [
+        style.major_grid_visible.is_some(),
+        style.major_grid_x_visible.is_some(),
+        style.major_grid_y_visible.is_some(),
+        style.minor_grid_x_visible.is_some(),
+        style.minor_grid_y_visible.is_some(),
+        style.major_grid_colour.is_some(),
+        style.minor_grid_colour.is_some(),
+        style.major_grid_width_mm.is_some(),
+        style.minor_grid_width_mm.is_some(),
+        style.panel_background.is_some(),
+        style.plot_background.is_some(),
+        style.panel_border_visible.is_some(),
+        style.panel_border_colour.is_some(),
+        style.panel_border_width_mm.is_some(),
+        style.strip_background.is_some(),
+    ]
+    .into_iter()
+    .filter(|set| *set)
+    .count();
+    override_summary(count)
+}
+
+fn layout_summary(style: &GraphStyle) -> String {
+    override_summary(usize::from(style.plot_margin_mm.is_some()) + usize::from(style.panel_spacing_mm.is_some()))
+}
+
 fn show_selected_graph_settings(app: &mut crate::VectorcraftApp, ui: &mut egui::Ui) {
     let Some(panel) = selected_linked_panel(app) else {
         ui.label("Select an R-linked plot on the artboard to edit its graph settings.");
@@ -204,128 +407,86 @@ fn show_selected_graph_settings(app: &mut crate::VectorcraftApp, ui: &mut egui::
         ui.strong("Figure Size");
         super::inspector::show_graph_plot_properties(app, ui);
     });
-    ui.separator();
     if !is_ggplot {
-        panel_caption(ui, "Axes, typography and legend controls require a ggplot object. Figure Size remains available for supported plots.");
+        panel_caption(ui, "This plot type supports size and refresh. Style overrides require a connected ggplot object.");
+    } else {
+        panel_caption(ui, "Graph style changes re-render this linked plot through R. Axis scales and plot values remain controlled by R.");
     }
+
     let mut committed = false;
-    ui.add_enabled_ui(is_ggplot, |ui| {
-        egui::CollapsingHeader::new("Axes").default_open(true).show(ui, |ui| {
+    category_popover(ui, "Titles & Labels", &titles_summary(&draft), is_ggplot, |ui| {
+        committed |=
+            text_section(ui, "Plot title", &mut draft.plot_title_pt, &mut draft.plot_title_visible, &mut draft.title_details, (12.0, false, true));
+        committed |=
+            text_section(ui, "Plot subtitle", &mut draft.subtitle_pt, &mut draft.subtitle_visible, &mut draft.subtitle_details, (10.0, false, false));
+        committed |=
+            text_section(ui, "Plot caption", &mut draft.caption_pt, &mut draft.caption_visible, &mut draft.caption_details, (8.0, false, false));
+        committed |= text_section(
+            ui,
+            "X-axis title",
+            &mut draft.axis_title_x_pt,
+            &mut draft.axis_title_x_visible,
+            &mut draft.axis_title_x_details,
+            (10.0, false, false),
+        );
+        committed |= text_section(
+            ui,
+            "Y-axis title",
+            &mut draft.axis_title_y_pt,
+            &mut draft.axis_title_y_visible,
+            &mut draft.axis_title_y_details,
+            (10.0, false, false),
+        );
+        committed |=
+            text_section(ui, "X-axis tick labels", &mut draft.tick_x_pt, &mut draft.tick_x_visible, &mut draft.tick_x_details, (8.0, true, false));
+        committed |=
+            text_section(ui, "Y-axis tick labels", &mut draft.tick_y_pt, &mut draft.tick_y_visible, &mut draft.tick_y_details, (8.0, true, false));
+        committed |= text_section(
+            ui,
+            "Facet strip text",
+            &mut draft.strip_text_pt,
+            &mut draft.strip_text_visible,
+            &mut draft.strip_text_details,
+            (9.0, false, false),
+        );
+        let before = draft.plot_title_position;
+        ui.horizontal(|ui| {
+            ui.label("Title position");
+            egui::ComboBox::from_id_salt(("graph-title-position", panel.panel_id))
+                .selected_text(draft.plot_title_position.map_or("R default", TitlePosition::label))
+                .show_ui(ui, |ui| {
+                    ui.selectable_value(&mut draft.plot_title_position, None, "R default");
+                    for position in TitlePosition::ALL {
+                        ui.selectable_value(&mut draft.plot_title_position, Some(position), position.label());
+                    }
+                });
+        });
+        committed |= before != draft.plot_title_position;
+    });
+
+    category_popover(ui, "Axes & Ticks", &axes_summary(&draft), is_ggplot, |ui| {
+        egui::CollapsingHeader::new("Axis lines").id_salt(("graph-axis-lines", panel.panel_id)).default_open(true).show(ui, |ui| {
             committed |= number_row(ui, "X line width", &mut draft.axis_x_line_mm, 0.5, " mm", 0.1..=20.0);
             committed |= number_row(ui, "Y line width", &mut draft.axis_y_line_mm, 0.5, " mm", 0.1..=20.0);
             committed |= visibility_row(ui, "X-axis line", &mut draft.axis_x_visible);
             committed |= visibility_row(ui, "Y-axis line", &mut draft.axis_y_visible);
-            egui::CollapsingHeader::new("Tick marks").default_open(false).show(ui, |ui| {
-                committed |= visibility_row(ui, "X tick marks", &mut draft.axis_x_ticks_visible);
-                committed |= visibility_row(ui, "Y tick marks", &mut draft.axis_y_ticks_visible);
-                committed |= string_row(ui, "X line colour", &mut draft.axis_x_line_colour, "#222222");
-                committed |= string_row(ui, "Y line colour", &mut draft.axis_y_line_colour, "#222222");
-                committed |= string_row(ui, "X tick colour", &mut draft.axis_x_tick_colour, "#222222");
-                committed |= string_row(ui, "Y tick colour", &mut draft.axis_y_tick_colour, "#222222");
-                committed |= number_row(ui, "X tick width", &mut draft.axis_x_tick_width_mm, 0.4, " mm", 0.01..=20.0);
-                committed |= number_row(ui, "Y tick width", &mut draft.axis_y_tick_width_mm, 0.4, " mm", 0.01..=20.0);
-                committed |= number_row(ui, "X tick length", &mut draft.axis_x_tick_length_mm, 1.5, " mm", 0.0..=100.0);
-                committed |= number_row(ui, "Y tick length", &mut draft.axis_y_tick_length_mm, 1.5, " mm", 0.0..=100.0);
-            });
+            committed |= string_row(ui, "X line colour", &mut draft.axis_x_line_colour, "#222222");
+            committed |= string_row(ui, "Y line colour", &mut draft.axis_y_line_colour, "#222222");
         });
-        egui::CollapsingHeader::new("Typography").default_open(true).show(ui, |ui| {
-            committed |= text_section(
-                ui,
-                "Plot title",
-                &mut draft.plot_title_pt,
-                &mut draft.plot_title_visible,
-                &mut draft.title_details,
-                (12.0, false, true),
-            );
-            committed |= text_section(
-                ui,
-                "Plot subtitle",
-                &mut draft.subtitle_pt,
-                &mut draft.subtitle_visible,
-                &mut draft.subtitle_details,
-                (10.0, false, false),
-            );
-            committed |=
-                text_section(ui, "Plot caption", &mut draft.caption_pt, &mut draft.caption_visible, &mut draft.caption_details, (8.0, false, false));
-            committed |= text_section(
-                ui,
-                "X-axis title",
-                &mut draft.axis_title_x_pt,
-                &mut draft.axis_title_x_visible,
-                &mut draft.axis_title_x_details,
-                (10.0, false, false),
-            );
-            committed |= text_section(
-                ui,
-                "Y-axis title",
-                &mut draft.axis_title_y_pt,
-                &mut draft.axis_title_y_visible,
-                &mut draft.axis_title_y_details,
-                (10.0, false, false),
-            );
-            committed |= text_section(
-                ui,
-                "X-axis tick labels",
-                &mut draft.tick_x_pt,
-                &mut draft.tick_x_visible,
-                &mut draft.tick_x_details,
-                (8.0, true, false),
-            );
-            committed |= text_section(
-                ui,
-                "Y-axis tick labels",
-                &mut draft.tick_y_pt,
-                &mut draft.tick_y_visible,
-                &mut draft.tick_y_details,
-                (8.0, true, false),
-            );
-            committed |= text_section(
-                ui,
-                "Legend title",
-                &mut draft.legend_title_pt,
-                &mut draft.legend_title_visible,
-                &mut draft.legend_title_details,
-                (10.0, false, false),
-            );
-            committed |= text_section(
-                ui,
-                "Legend text",
-                &mut draft.legend_text_pt,
-                &mut draft.legend_text_visible,
-                &mut draft.legend_text_details,
-                (8.0, false, false),
-            );
-            let before = draft.plot_title_position;
-            ui.horizontal(|ui| {
-                ui.label("Title position");
-                egui::ComboBox::from_id_salt("graph-title-position")
-                    .selected_text(draft.plot_title_position.map_or("R default", TitlePosition::label))
-                    .show_ui(ui, |ui| {
-                        ui.selectable_value(&mut draft.plot_title_position, None, "R default");
-                        for position in TitlePosition::ALL {
-                            ui.selectable_value(&mut draft.plot_title_position, Some(position), position.label());
-                        }
-                    });
-            });
-            committed |= before != draft.plot_title_position;
+        egui::CollapsingHeader::new("Tick marks and labels").id_salt(("graph-ticks", panel.panel_id)).default_open(false).show(ui, |ui| {
+            committed |= visibility_row(ui, "X tick marks", &mut draft.axis_x_ticks_visible);
+            committed |= visibility_row(ui, "Y tick marks", &mut draft.axis_y_ticks_visible);
+            committed |= string_row(ui, "X tick colour", &mut draft.axis_x_tick_colour, "#222222");
+            committed |= string_row(ui, "Y tick colour", &mut draft.axis_y_tick_colour, "#222222");
+            committed |= number_row(ui, "X tick width", &mut draft.axis_x_tick_width_mm, 0.4, " mm", 0.01..=20.0);
+            committed |= number_row(ui, "Y tick width", &mut draft.axis_y_tick_width_mm, 0.4, " mm", 0.01..=20.0);
+            committed |= number_row(ui, "X tick length", &mut draft.axis_x_tick_length_mm, 1.5, " mm", 0.0..=100.0);
+            committed |= number_row(ui, "Y tick length", &mut draft.axis_y_tick_length_mm, 1.5, " mm", 0.0..=100.0);
         });
-        egui::CollapsingHeader::new("Grid and Panel").default_open(false).show(ui, |ui| {
-            committed |= visibility_row(ui, "Major grid", &mut draft.major_grid_visible);
-            committed |= visibility_row(ui, "Major grid X", &mut draft.major_grid_x_visible);
-            committed |= visibility_row(ui, "Major grid Y", &mut draft.major_grid_y_visible);
-            committed |= visibility_row(ui, "Minor grid X", &mut draft.minor_grid_x_visible);
-            committed |= visibility_row(ui, "Minor grid Y", &mut draft.minor_grid_y_visible);
-            committed |= string_row(ui, "Major grid colour", &mut draft.major_grid_colour, "grey85");
-            committed |= string_row(ui, "Minor grid colour", &mut draft.minor_grid_colour, "grey90");
-            committed |= number_row(ui, "Major grid width", &mut draft.major_grid_width_mm, 0.2, " mm", 0.01..=20.0);
-            committed |= number_row(ui, "Minor grid width", &mut draft.minor_grid_width_mm, 0.1, " mm", 0.01..=20.0);
-            committed |= string_row(ui, "Panel fill", &mut draft.panel_background, "#ffffff");
-            committed |= string_row(ui, "Plot fill", &mut draft.plot_background, "#ffffff");
-            committed |= visibility_row(ui, "Panel border", &mut draft.panel_border_visible);
-            committed |= string_row(ui, "Border colour", &mut draft.panel_border_colour, "#222222");
-            committed |= number_row(ui, "Border width", &mut draft.panel_border_width_mm, 0.4, " mm", 0.01..=20.0);
-        });
-        egui::CollapsingHeader::new("Legend").default_open(true).show(ui, |ui| {
+    });
+
+    category_popover(ui, "Legend", &legend_summary(&draft), is_ggplot, |ui| {
+        egui::CollapsingHeader::new("Placement").id_salt(("graph-legend-placement", panel.panel_id)).default_open(true).show(ui, |ui| {
             let old_position = draft.legend_position;
             ui.horizontal(|ui| {
                 ui.label("Position");
@@ -343,45 +504,81 @@ fn show_selected_graph_settings(app: &mut crate::VectorcraftApp, ui: &mut egui::
                 committed |= number_row(ui, "Inside X", &mut draft.inside_x, 0.95, "", 0.0..=1.0);
                 committed |= number_row(ui, "Inside Y", &mut draft.inside_y, 0.95, "", 0.0..=1.0);
             }
-            committed |= number_row(ui, "Legend key", &mut draft.legend_key_mm, 5.0, " mm", 0.1..=100.0);
-            egui::CollapsingHeader::new("Advanced legend").default_open(false).show(ui, |ui| {
-                let before = draft.legend_direction;
-                ui.horizontal(|ui| {
-                    ui.label("Direction");
-                    egui::ComboBox::from_id_salt("graph-legend-direction")
-                        .selected_text(draft.legend_direction.map_or("R default", LegendDirection::label))
-                        .show_ui(ui, |ui| {
-                            ui.selectable_value(&mut draft.legend_direction, None, "R default");
-                            for direction in LegendDirection::ALL {
-                                ui.selectable_value(&mut draft.legend_direction, Some(direction), direction.label());
-                            }
-                        });
-                });
-                committed |= before != draft.legend_direction;
-                committed |= justification_row(ui, &mut draft.legend_justification);
-                committed |= number_row(ui, "Key width", &mut draft.legend_key_width_mm, 5.0, " mm", 0.0..=100.0);
-                committed |= number_row(ui, "Key height", &mut draft.legend_key_height_mm, 5.0, " mm", 0.0..=100.0);
-                committed |= string_row(ui, "Key fill", &mut draft.legend_key_background, "#ffffff");
-                committed |= string_row(ui, "Legend fill", &mut draft.legend_background, "#ffffff");
-                committed |= number_row(ui, "Spacing X", &mut draft.legend_spacing_x_mm, 2.0, " mm", 0.0..=100.0);
-                committed |= number_row(ui, "Spacing Y", &mut draft.legend_spacing_y_mm, 2.0, " mm", 0.0..=100.0);
-                committed |= margins_row(ui, "Legend margins", &mut draft.legend_margin_mm);
+            let old_direction = draft.legend_direction;
+            ui.horizontal(|ui| {
+                ui.label("Direction");
+                egui::ComboBox::from_id_salt(("graph-legend-direction", panel.panel_id))
+                    .selected_text(draft.legend_direction.map_or("R default", LegendDirection::label))
+                    .show_ui(ui, |ui| {
+                        ui.selectable_value(&mut draft.legend_direction, None, "R default");
+                        for direction in LegendDirection::ALL {
+                            ui.selectable_value(&mut draft.legend_direction, Some(direction), direction.label());
+                        }
+                    });
             });
+            committed |= old_direction != draft.legend_direction;
+            committed |= justification_row(ui, &mut draft.legend_justification);
         });
-        egui::CollapsingHeader::new("Margins and Facets").default_open(false).show(ui, |ui| {
-            committed |= margins_row(ui, "Plot margins", &mut draft.plot_margin_mm);
+        egui::CollapsingHeader::new("Keys and spacing").id_salt(("graph-legend-keys", panel.panel_id)).default_open(false).show(ui, |ui| {
+            committed |= number_row(ui, "Legend key", &mut draft.legend_key_mm, 5.0, " mm", 0.1..=100.0);
+            committed |= number_row(ui, "Key width", &mut draft.legend_key_width_mm, 5.0, " mm", 0.0..=100.0);
+            committed |= number_row(ui, "Key height", &mut draft.legend_key_height_mm, 5.0, " mm", 0.0..=100.0);
+            committed |= string_row(ui, "Key fill", &mut draft.legend_key_background, "#ffffff");
+            committed |= string_row(ui, "Legend fill", &mut draft.legend_background, "#ffffff");
+            committed |= number_row(ui, "Spacing X", &mut draft.legend_spacing_x_mm, 2.0, " mm", 0.0..=100.0);
+            committed |= number_row(ui, "Spacing Y", &mut draft.legend_spacing_y_mm, 2.0, " mm", 0.0..=100.0);
+            committed |= margins_row(ui, "Legend margins", &mut draft.legend_margin_mm);
+        });
+        egui::CollapsingHeader::new("Text").id_salt(("graph-legend-text", panel.panel_id)).default_open(false).show(ui, |ui| {
             committed |= text_section(
                 ui,
-                "Facet strip text",
-                &mut draft.strip_text_pt,
-                &mut draft.strip_text_visible,
-                &mut draft.strip_text_details,
-                (9.0, false, false),
+                "Legend title",
+                &mut draft.legend_title_pt,
+                &mut draft.legend_title_visible,
+                &mut draft.legend_title_details,
+                (10.0, false, false),
             );
-            committed |= string_row(ui, "Facet strip fill", &mut draft.strip_background, "#eeeeee");
-            committed |= number_row(ui, "Panel spacing", &mut draft.panel_spacing_mm, 2.0, " mm", 0.0..=100.0);
+            committed |= text_section(
+                ui,
+                "Legend text",
+                &mut draft.legend_text_pt,
+                &mut draft.legend_text_visible,
+                &mut draft.legend_text_details,
+                (8.0, false, false),
+            );
         });
     });
+
+    category_popover(ui, "Colors & Theme", &colors_summary(&draft), is_ggplot, |ui| {
+        egui::CollapsingHeader::new("Grid lines").id_salt(("graph-grid-lines", panel.panel_id)).default_open(true).show(ui, |ui| {
+            committed |= visibility_row(ui, "Major grid", &mut draft.major_grid_visible);
+            committed |= visibility_row(ui, "Major grid X", &mut draft.major_grid_x_visible);
+            committed |= visibility_row(ui, "Major grid Y", &mut draft.major_grid_y_visible);
+            committed |= visibility_row(ui, "Minor grid X", &mut draft.minor_grid_x_visible);
+            committed |= visibility_row(ui, "Minor grid Y", &mut draft.minor_grid_y_visible);
+            committed |= string_row(ui, "Major grid colour", &mut draft.major_grid_colour, "grey85");
+            committed |= string_row(ui, "Minor grid colour", &mut draft.minor_grid_colour, "grey90");
+            committed |= number_row(ui, "Major grid width", &mut draft.major_grid_width_mm, 0.2, " mm", 0.01..=20.0);
+            committed |= number_row(ui, "Minor grid width", &mut draft.minor_grid_width_mm, 0.1, " mm", 0.01..=20.0);
+        });
+        egui::CollapsingHeader::new("Plot, panel and facet fills").id_salt(("graph-backgrounds", panel.panel_id)).default_open(false).show(
+            ui,
+            |ui| {
+                committed |= string_row(ui, "Panel fill", &mut draft.panel_background, "#ffffff");
+                committed |= string_row(ui, "Plot fill", &mut draft.plot_background, "#ffffff");
+                committed |= visibility_row(ui, "Panel border", &mut draft.panel_border_visible);
+                committed |= string_row(ui, "Border colour", &mut draft.panel_border_colour, "#222222");
+                committed |= number_row(ui, "Border width", &mut draft.panel_border_width_mm, 0.4, " mm", 0.01..=20.0);
+                committed |= string_row(ui, "Facet strip fill", &mut draft.strip_background, "#eeeeee");
+            },
+        );
+    });
+
+    category_popover(ui, "Panel & Layout", &layout_summary(&draft), is_ggplot, |ui| {
+        committed |= margins_row(ui, "Plot margins", &mut draft.plot_margin_mm);
+        committed |= number_row(ui, "Panel spacing", &mut draft.panel_spacing_mm, 2.0, " mm", 0.0..=100.0);
+    });
+
     app.scientific.graph_drafts.insert(draft_key, draft.clone());
     ui.separator();
     if ui.add_enabled(is_ggplot && !draft.is_default(), egui::Button::new("Reset Graph Styles to R")).clicked() {
