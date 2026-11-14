@@ -683,8 +683,54 @@ fn graph_style_metadata_restores_with_panel_identity_and_reflow_dimensions() {
 }
 
 #[test]
-fn graph_dock_shows_panel_controls_and_empty_state_at_narrow_width() {
+fn graph_copy_as_r_code_uses_selected_gui_overrides_without_changing_the_script() {
     let mut h = linked_workspace_harness(900.0, 720.0, 1.0);
+    let panel = h.state().scientific.linked_panels[0].clone();
+    let key = (panel.document_uid, panel.panel_id);
+    h.state_mut().scientific.graph_drafts.insert(
+        key,
+        crate::scientific::graph_style::GraphStyle {
+            tick_x_pt: Some(11.0),
+            tick_y_pt: Some(13.0),
+            legend_position: Some(crate::scientific::graph_style::LegendPosition::Top),
+            ..Default::default()
+        },
+    );
+    h.state_mut().run("select.set", json!({"ids": [panel.panel_id]})).unwrap();
+    let source = (h.state().scientific.console_history.clone(), h.state().scientific.console_output.clone());
+    h.run_steps(5);
+    h.get_by_label("Copy as R Code").click_accesskit();
+    h.run_steps(2);
+
+    let code = h.state().clipboard_out.as_deref().expect("generated R code should be copied");
+    assert!(code.contains("get(\"plot_A\""));
+    assert!(code.contains("axis.text.x = ggplot2::element_text(size = 11.0)"));
+    assert!(code.contains("axis.text.y = ggplot2::element_text(size = 13.0)"));
+    assert!(code.contains("legend.position = \"top\""));
+    assert_eq!(
+        (h.state().scientific.console_history.clone(), h.state().scientific.console_output.clone()),
+        source,
+        "copying styles must not edit R input or output"
+    );
+    assert!(h.state().ui.status.to_lowercase().contains("copied r code"));
+}
+
+#[test]
+fn graph_copy_as_r_code_is_only_offered_for_linked_ggplot_objects() {
+    let mut h = linked_workspace_harness(900.0, 720.0, 1.0);
+    let panel_id = h.state().scientific.linked_panels[0].panel_id;
+    h.state_mut().scientific.plots[0].plot_kind = "base".into();
+    h.state_mut().run("select.set", json!({"ids": [panel_id]})).unwrap();
+    h.run_steps(5);
+    assert!(h.query_by_label("Copy as R Code").is_none());
+    assert!(
+        h.query_by_label("This plot type supports size and refresh. Style overrides and R code export require a connected ggplot object.").is_some()
+    );
+}
+
+#[test]
+fn graph_dock_shows_panel_controls_and_empty_state_at_narrow_width() {
+    let mut h = linked_workspace_harness(900.0, 1200.0, 1.0);
     let panel = h.state().scientific.linked_panels[0].panel_id;
     h.state_mut().run("select.set", json!({"ids": [panel]})).unwrap();
     h.run_steps(5);
@@ -700,98 +746,57 @@ fn graph_dock_shows_panel_controls_and_empty_state_at_narrow_width() {
         "Relink",
         "Unlink",
         "Delete Artwork",
+        "Transform",
         "Figure Size",
-        "Titles & Labels",
-        "Axes & Ticks",
+        "Title",
+        "X axis",
+        "Y axis",
         "Legend",
-        "Colors & Theme",
-        "Panel & Layout",
+        "Plot",
+        "Copy as R Code",
         "Reset Graph Styles to R",
     ] {
         assert!(h.query_all_by_label(label).next().is_some(), "missing Graph control {label}");
     }
-    assert!(h.query_by_label("X-axis tick labels").is_none(), "advanced controls stay inside their popover until requested");
-    for (category, controls) in [
-        (
-            "Titles & Labels",
-            &[
-                "Plot title",
-                "Plot subtitle",
-                "Plot caption",
-                "X-axis title",
-                "Y-axis title",
-                "X-axis tick labels",
-                "Y-axis tick labels",
-                "Facet strip text",
-                "Title position",
-            ][..],
-        ),
-        ("Axes & Ticks", &["Axis lines", "X line width", "Y line width", "X-axis line", "Y-axis line", "Tick marks and labels"][..]),
-        ("Legend", &["Placement", "Position", "Direction", "Legend justification", "Keys and spacing", "Text"][..]),
-        (
-            "Colors & Theme",
-            &["Grid lines", "Major grid", "Major grid X", "Major grid Y", "Minor grid X", "Minor grid Y", "Plot, panel and facet fills"][..],
-        ),
-        ("Panel & Layout", &["Plot margins", "Panel spacing"][..]),
-    ] {
-        h.get_by_label(category).click_accesskit();
-        h.run_steps(2);
-        for control in controls {
-            assert!(h.query_all_by_label(control).next().is_some(), "{category} popover must expose {control}");
-        }
-        if category == "Titles & Labels" {
-            h.get_by_label("Plot title").click_accesskit();
-            h.run_steps(2);
-            capture(&mut h, BottomTab::LinkedPanels, 900.0, 1.0, "graph-inspector-titles-popover", &json!({"category": category}));
-        }
-        match category {
-            "Axes & Ticks" => {
-                h.get_by_label("Tick marks and labels").click_accesskit();
-                h.run_steps(2);
-                for control in [
-                    "X tick marks",
-                    "Y tick marks",
-                    "X tick colour",
-                    "Y tick colour",
-                    "X tick width",
-                    "Y tick width",
-                    "X tick length",
-                    "Y tick length",
-                ] {
-                    assert!(h.query_all_by_label(control).next().is_some(), "Axes & Ticks popover must expose {control}");
-                }
-            }
-            "Legend" => {
-                h.get_by_label("Keys and spacing").click_accesskit();
-                h.run_steps(2);
-                for control in ["Legend key", "Key width", "Key height", "Key fill", "Legend fill", "Spacing X", "Spacing Y", "Legend margins"] {
-                    assert!(h.query_all_by_label(control).next().is_some(), "Legend popover must expose {control}");
-                }
-                h.get_by_label("Text").click_accesskit();
-                h.run_steps(2);
-                assert!(h.query_all_by_label("Legend title").next().is_some());
-                assert!(h.query_all_by_label("Legend text").next().is_some());
-            }
-            "Colors & Theme" => {
-                h.get_by_label("Plot, panel and facet fills").click_accesskit();
-                h.run_steps(2);
-                for control in ["Panel fill", "Plot fill", "Panel border", "Border colour", "Border width", "Facet strip fill"] {
-                    assert!(h.query_all_by_label(control).next().is_some(), "Colors & Theme popover must expose {control}");
-                }
-            }
-            _ => {}
-        }
-        h.get_by_label(category).click_accesskit();
-        h.run_steps(2);
+    assert!(h.query_by_label("X-axis tick labels visibility").is_some());
+    assert!(h.query_by_label("X line width").is_some());
+    assert!(h.query_by_label("Y line width").is_some());
+    assert!(h.query_all_by_label("Position").count() >= 2, "title and legend positions should be accessible");
+
+    let line = h.query_all_by_label("Line").next().expect("X axis line has advanced settings");
+    line.click_accesskit();
+    h.run_steps(2);
+    for control in ["Axis line colour", "Tick marks", "Tick colour", "Tick width", "Tick length"] {
+        assert!(h.query_all_by_label(control).next().is_some(), "X axis Line popover must expose {control}");
     }
-    capture(&mut h, BottomTab::LinkedPanels, 900.0, 1.0, "graph-inspector-categories", &json!({"categories": 5}));
+    capture(&mut h, BottomTab::LinkedPanels, 900.0, 1.0, "graph-inspector-x-line-popover", &json!({"component": "X axis"}));
+    h.query_all_by_label("Line").next().unwrap().click_accesskit();
+    h.run_steps(2);
+    assert!(!egui::Popup::is_any_open(&h.ctx), "clicking the anchor closes its advanced popover");
+
+    h.query_all_by_label("Text").next().expect("X axis text has advanced settings").click_accesskit();
+    h.run_steps(2);
+    for control in ["X-axis tick labels family", "X-axis tick labels colour", "X-axis tick labels angle"] {
+        assert!(h.query_all_by_label(control).next().is_some(), "X axis Text popover must expose {control}");
+    }
+    h.query_all_by_label("Text").next().unwrap().click_accesskit();
+    h.run_steps(2);
+
+    h.query_all_by_label("Key").next().expect("legend key has advanced settings").click_accesskit();
+    h.run_steps(2);
+    for control in ["Key width", "Key height", "Key fill", "Legend fill", "Spacing X", "Spacing Y", "Legend margins"] {
+        assert!(h.query_all_by_label(control).next().is_some(), "Legend Key popover must expose {control}");
+    }
+    h.query_all_by_label("Key").next().unwrap().click_accesskit();
+    h.run_steps(2);
+
     assert!(h.query_by_label("Linked Plot Panel").is_none());
     assert!(h.query_by_label("Scale").is_none());
+    capture(&mut h, BottomTab::LinkedPanels, 900.0, 1.0, "graph-inspector-components", &json!({"components": 6}));
     h.state_mut().run("select.none", json!({})).unwrap();
     h.run_steps(3);
     assert!(h.query_by_label("Select an R-linked plot on the artboard to edit its graph settings.").is_some());
 }
-
 #[test]
 fn graph_visibility_control_and_apply_queue_keep_font_size() {
     let mut h = linked_workspace_harness(900.0, 720.0, 1.0);
@@ -802,15 +807,7 @@ fn graph_visibility_control_and_apply_queue_keep_font_size() {
     // Keep the fixture's synthetic R plot from starting a real render.
     h.state_mut().scientific.running = true;
     h.run_steps(5);
-    h.get_by_label("Titles & Labels").click_accesskit();
-    h.run_steps(2);
-    h.get_by_label("X-axis tick labels").click_accesskit();
-    h.run_steps(2);
-    assert!(h.query_by_role_and_label(Role::ComboBox, "X-axis tick labels visibility").is_some());
-    let panel = h.state().scientific.linked_panels[0].clone();
-    let mut style = h.state().scientific.graph_drafts.get(&key).unwrap().clone();
-    style.tick_x_visible = Some(false);
-    request_graph_apply(&mut h.state_mut().scientific, &panel, style, panel.width_mm, panel.height_mm).unwrap();
+    h.get_by_label("X-axis tick labels visibility").click_accesskit();
     h.run_steps(2);
     let state = h.state();
     let request = state.scientific.graph_pending.get(&key).unwrap_or_else(|| {
@@ -830,7 +827,7 @@ fn graph_numeric_edit_waits_for_enter_before_queuing_render() {
     h.state_mut().run("select.set", json!({"ids": [panel]})).unwrap();
     h.state_mut().scientific.running = true;
     h.run_steps(5);
-    h.get_by_label("Axes & Ticks").click_accesskit();
+    h.query_all_by_label("Line").next().expect("axis line popover").click_accesskit();
     h.run_steps(2);
     h.get_by_role_and_label(Role::SpinButton, "X line width").click();
     h.run_steps(2);
@@ -857,10 +854,10 @@ fn graph_numeric_edit_waits_for_enter_before_queuing_render() {
     }
     h.run_steps(2);
     assert_eq!(h.state().scientific.graph_pending.get(&key).and_then(|request| request.style.axis_x_line_mm), Some(2.1));
-    h.get_by_label("Axes & Ticks").click_accesskit();
+    h.query_all_by_label("Line").next().unwrap().click_accesskit();
     h.run_steps(2);
-    assert!(!egui::Popup::is_any_open(&h.ctx), "clicking the active category closes its popover");
-    h.get_by_label("Axes & Ticks").click_accesskit();
+    assert!(!egui::Popup::is_any_open(&h.ctx), "clicking the active property closes its popover");
+    h.query_all_by_label("Line").next().unwrap().click_accesskit();
     h.run_steps(2);
     assert_eq!(
         h.state().scientific.graph_drafts.get(&key).and_then(|style| style.axis_x_line_mm),
