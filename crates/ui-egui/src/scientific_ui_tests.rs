@@ -625,7 +625,9 @@ fn r_workspace_stage4_inspector_identifies_link_and_preserves_vector_controls() 
             h.state_mut().run("window.panel.activate", json!({"panel": "properties"})).unwrap();
             h.run_steps(2);
             assert!(h.query_by_label("R-linked plot · Panel A").is_some(), "linked selection appears in native Inspector");
-            for label in ["plot_A", "R plot size · mm", "Update from R", "Apply Resize", "Vector transform (document points)"] {
+            for label in
+                ["plot_A", "R plot size", "Output width", "Output height", "Update from R", "Apply Resize", "Vector transform (document points)"]
+            {
                 assert!(h.query_all_by_label(label).next().is_some(), "missing Inspector control {label}");
             }
             let geometry = workspace_measurements(&h, width, height);
