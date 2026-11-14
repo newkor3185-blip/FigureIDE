@@ -235,13 +235,12 @@ jobs:
           set -euo pipefail
           notes="docs/releases/figureide-v${RELEASE_VERSION}.md"
           test -s "$notes"
-          assets=(
-            release-artifacts/windows/FigureIDE-v${RELEASE_VERSION}-Windows-x64.zip
-            release-artifacts/linux/FigureIDE-v${RELEASE_VERSION}-Linux-x86_64.tar.gz
-            release-artifacts/macos-apple-silicon/FigureIDE-v${RELEASE_VERSION}-macOS-AppleSilicon.zip
-            release-artifacts/macos-intel/FigureIDE-v${RELEASE_VERSION}-macOS-Intel.zip
-            release-artifacts/SHA256SUMS
-          )
+          assets=()
+          assets+=("release-artifacts/windows/FigureIDE-v${RELEASE_VERSION}-Windows-x64.zip")
+          assets+=("release-artifacts/linux/FigureIDE-v${RELEASE_VERSION}-Linux-x86_64.tar.gz")
+          assets+=("release-artifacts/macos-apple-silicon/FigureIDE-v${RELEASE_VERSION}-macOS-AppleSilicon.zip")
+          assets+=("release-artifacts/macos-intel/FigureIDE-v${RELEASE_VERSION}-macOS-Intel.zip")
+          assets+=("release-artifacts/SHA256SUMS")
           for asset in "${assets[@]}"; do test -s "$asset"; done
           if gh release view "$RELEASE_TAG" --json isDraft >/tmp/figureide-existing-release.json 2>/dev/null; then
             is_draft="$(jq -r '.isDraft' /tmp/figureide-existing-release.json)"
