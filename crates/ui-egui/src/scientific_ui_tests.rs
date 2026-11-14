@@ -747,7 +747,7 @@ fn graph_dock_shows_panel_controls_and_empty_state_at_narrow_width() {
         "Unlink",
         "Delete Artwork",
         "Transform",
-        "Figure Size",
+        "R plot size",
         "Title",
         "X axis",
         "Y axis",
@@ -906,13 +906,13 @@ fn graph_size_draft_stays_with_ma_panel_while_pca_is_selected() {
     h.get_by_label("Plot Registry (2)").click_accesskit();
     h.get_by_label("Linked Panels (2)").click_accesskit();
     h.run_steps(3);
-    let input = h.get_all_by_role_and_label(Role::SpinButton, "mm").next().expect("Graph width input");
+    let input = h.get_by_role_and_label(Role::TextInput, "Output width");
     input.click();
     h.run_steps(2);
-    let input = h.get_all_by_role_and_label(Role::SpinButton, "mm").next().unwrap();
+    let input = h.get_by_role_and_label(Role::TextInput, "Output width");
     input.focus();
     h.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::A);
-    input.type_text("120");
+    input.type_text("120 mm");
     h.run_steps(2);
     h.key_press(egui::Key::Enter);
     h.run_steps(2);
@@ -924,13 +924,13 @@ fn graph_size_draft_stays_with_ma_panel_while_pca_is_selected() {
     h.state_mut().run("select.set", json!({"ids": [ma.panel_id]})).unwrap();
     h.run_steps(3);
     assert_eq!(h.state().scientific.properties_width_mm, 120.0, "MA's committed width must survive selection changes while rendering");
-    let height = h.get_all_by_role_and_label(Role::SpinButton, "mm").nth(1).expect("Graph height input");
+    let height = h.get_by_role_and_label(Role::TextInput, "Output height");
     height.click();
     h.run_steps(2);
-    let height = h.get_all_by_role_and_label(Role::SpinButton, "mm").nth(1).unwrap();
+    let height = h.get_by_role_and_label(Role::TextInput, "Output height");
     height.focus();
     h.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::A);
-    height.type_text("80");
+    height.type_text("80 mm");
     h.run_steps(2);
     h.key_press(egui::Key::Enter);
     h.run_steps(2);

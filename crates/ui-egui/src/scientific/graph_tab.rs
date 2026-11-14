@@ -292,29 +292,6 @@ fn basic_grid_visibility(ui: &mut egui::Ui, label: &str, x: &mut Option<bool>, y
     changed
 }
 
-fn position_controls(app: &mut crate::VectorcraftApp, ui: &mut egui::Ui, panel_id: u64) {
-    let Some(bounds) = app.session.doc().ok().and_then(|state| state.doc.bounds_of(&[vectorcraft_doc::NodeId(panel_id)], false)) else {
-        return;
-    };
-    let origin = app.ruler_origin();
-    let units = app.session.general_unit();
-    let width = (ui.available_width() - 30.0).max(60.0) / 2.0;
-    ui.horizontal(|ui| {
-        ui.label("X:");
-        if let Some(value) = crate::widgets::num_field_named(ui, "graph-transform-x", None, Some(bounds.x0 - origin.x), units, width)
-            && (value - (bounds.x0 - origin.x)).abs() > f64::EPSILON
-        {
-            crate::panels::transform::run_transform(app, "object.setBounds", serde_json::json!({"x": value + origin.x}));
-        }
-        ui.label("Y:");
-        if let Some(value) = crate::widgets::num_field_named(ui, "graph-transform-y", None, Some(bounds.y0 - origin.y), units, width)
-            && (value - (bounds.y0 - origin.y)).abs() > f64::EPSILON
-        {
-            crate::panels::transform::run_transform(app, "object.setBounds", serde_json::json!({"y": value + origin.y}));
-        }
-    });
-}
-
 fn axis_component(ui: &mut egui::Ui, title: &str, id: &str, style: &mut GraphStyle, x_axis: bool) -> bool {
     let mut committed = false;
     egui::CollapsingHeader::new(title).id_salt(("graph-component", id)).default_open(true).show(ui, |ui| {
@@ -391,12 +368,11 @@ fn show_selected_graph_settings(app: &mut crate::VectorcraftApp, ui: &mut egui::
         panel_caption(ui, "This plot type supports size and refresh. Style overrides and R code export require a connected ggplot object.");
     }
 
-    egui::CollapsingHeader::new("Selected Graph Settings").id_salt("graph-selected-settings").default_open(true).show(ui, |ui| {
+    ui.scope(|ui| {
         egui::CollapsingHeader::new("Transform").id_salt(("graph-component", "transform")).default_open(true).show(ui, |ui| {
-            position_controls(app, ui, panel.panel_id);
-            ui.strong("Figure Size");
             super::inspector::show_graph_plot_properties(app, ui);
         });
+        crate::widgets::divider(ui);
         let mut committed = false;
         if is_ggplot {
             egui::CollapsingHeader::new("Title").id_salt(("graph-component", "title")).default_open(true).show(ui, |ui| {
@@ -448,8 +424,11 @@ fn show_selected_graph_settings(app: &mut crate::VectorcraftApp, ui: &mut egui::
                     9.0,
                 );
             });
+            crate::widgets::divider(ui);
             committed |= axis_component(ui, "X axis", "x-axis", &mut draft, true);
+            crate::widgets::divider(ui);
             committed |= axis_component(ui, "Y axis", "y-axis", &mut draft, false);
+            crate::widgets::divider(ui);
             egui::CollapsingHeader::new("Legend").id_salt(("graph-component", "legend")).default_open(true).show(ui, |ui| {
                 let before = draft.legend_position;
                 ui.horizontal(|ui| {
@@ -514,6 +493,7 @@ fn show_selected_graph_settings(app: &mut crate::VectorcraftApp, ui: &mut egui::
                 committed |= before != draft.legend_direction;
                 committed |= justification_row(ui, &mut draft.legend_justification);
             });
+            crate::widgets::divider(ui);
             egui::CollapsingHeader::new("Plot").id_salt(("graph-component", "plot")).default_open(true).show(ui, |ui| {
                 ui.horizontal(|ui| {
                     let (popover, label_response) = property_popover_with_response(ui, "major-grid", "Major grid", |ui| {
@@ -551,7 +531,6 @@ fn show_selected_graph_settings(app: &mut crate::VectorcraftApp, ui: &mut egui::
             });
         }
         app.scientific.graph_drafts.insert(draft_key, draft.clone());
-        ui.separator();
         if ui.add_enabled(is_ggplot && !draft.is_default(), egui::Button::new("Reset Graph Styles to R")).clicked() {
             draft = GraphStyle::default();
             app.scientific.graph_drafts.insert(draft_key, draft.clone());
@@ -563,6 +542,9 @@ fn show_selected_graph_settings(app: &mut crate::VectorcraftApp, ui: &mut egui::
             if let Err(error) = request_graph_apply(&mut app.scientific, &panel, draft.clone(), width_mm, height_mm) {
                 app.scientific.r_status = format!("Could not apply Graph settings: {error}");
             }
+        }
+        if is_ggplot {
+            crate::widgets::divider(ui);
         }
         let copy_code = is_ggplot.then(|| {
             ui.button("Copy as R Code").on_hover_text(
