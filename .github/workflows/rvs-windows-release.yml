@@ -313,7 +313,7 @@ jobs:
             Remove-Item Env:R_HOME -ErrorAction SilentlyContinue
             $port = Get-Random -Minimum 30000 -Maximum 50000
             $writeRoot = $env:RUNNER_TEMP
-            $process = Start-Process -FilePath $exe -ArgumentList "--control $port --automation-write-root `"$writeRoot`"" -PassThru -WindowStyle Hidden
+            $process = Start-Process -FilePath $exe -ArgumentList "--control $port --automation-read-root `"$writeRoot`" --automation-write-root `"$writeRoot`"" -PassThru -WindowStyle Hidden
             $ready = $false
             for ($attempt = 0; $attempt -lt 60; $attempt++) {
               if ($process.HasExited) {
