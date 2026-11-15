@@ -582,7 +582,7 @@ pub fn prepare_linux_install(archive_path: &Path, sha256: &str, version: &str, c
     Ok(plan)
 }
 
-#[cfg(any(target_os = "linux", windows))]
+#[cfg(any(target_os = "linux", windows, test))]
 fn copy_tree(source: &Path, destination: &Path, depth: usize, count: &mut usize, total: &mut u64) -> Result<(), String> {
     if depth > 64 {
         return Err("The existing install tree is nested too deeply to update safely.".into());
