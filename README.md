@@ -44,6 +44,13 @@ commit and publishes only a draft until it is explicitly reviewed and published.
 All four packages include `LICENSE-MIT`, `LICENSE-APACHE`, `NOTICE`, `ASSETS.md`, dependency
 license notices, and bundled asset license texts. Verify downloads with the release's `SHA256SUMS`.
 
+Desktop builds can check for FigureIDE updates from this official repository. Checks run in the
+background; Beta is selected by default, and updates always require user confirmation. Windows
+portable ZIP and supported Linux portable installs can be replaced automatically after
+verification. macOS packages currently use a verified download and manual installation so
+Gatekeeper is respected. See [Desktop updates](docs/updates.md) for channels, installation support,
+and limitations.
+
 ## Project layout
 
 ```text
