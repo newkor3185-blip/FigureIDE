@@ -4,9 +4,10 @@ use serde_json::Value;
 
 #[cfg(not(target_arch = "wasm32"))]
 use craft_update::{Release, http::Fetched};
+#[cfg(any(windows, target_os = "linux"))]
+use std::path::PathBuf;
 #[cfg(not(target_arch = "wasm32"))]
 use std::{
-    path::PathBuf,
     sync::mpsc::{Receiver, TryRecvError, channel},
     sync::{Arc, Mutex},
 };

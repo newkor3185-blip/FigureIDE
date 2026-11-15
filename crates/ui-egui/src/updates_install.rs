@@ -1,8 +1,11 @@
 //! Archive validation and staged replacement for the Linux portable FigureIDE package.
 
 use std::collections::BTreeSet;
-use std::io::{Read, Write};
+use std::io::Read;
 use std::path::{Component, Path, PathBuf};
+
+#[cfg(any(windows, target_os = "linux", test))]
+use std::io::Write;
 
 use serde::{Deserialize, Serialize};
 
@@ -106,6 +109,7 @@ fn check_build_info(bytes: &[u8], version: &str, target: &str) -> Result<(), Str
     Ok(())
 }
 
+#[cfg(any(windows, target_os = "linux"))]
 fn verify_archive_sha256(path: &Path, expected: &str) -> Result<(), String> {
     if expected.len() != 64 || !expected.bytes().all(|byte| byte.is_ascii_hexdigit()) {
         return Err("The update package has no valid expected SHA-256 value.".into());
@@ -1016,7 +1020,7 @@ mod tests {
         std::fs::write(backup.join("version"), b"previous").unwrap();
         rollback_linux(&root, &backup, Some(&failed)).unwrap();
         assert_eq!(std::fs::read(root.join("version")).unwrap(), b"previous");
-        assert!(!failed.exists());
+        assert_eq!(std::fs::read(failed.join("version")).unwrap(), b"broken");
         std::fs::remove_dir_all(temp).unwrap();
     }
 

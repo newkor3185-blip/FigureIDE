@@ -459,7 +459,7 @@ impl Default for Workspace {
 }
 
 impl Workspace {
-    #[cfg(not(target_arch = "wasm32"))]
+    #[cfg(any(windows, target_os = "linux"))]
     pub(crate) fn operation_running(&self) -> bool {
         self.running
     }

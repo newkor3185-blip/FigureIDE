@@ -835,6 +835,7 @@ Without a window (converting, scripting, the MCP server), use vectorcraft-cli:
 ";
 
 fn main() -> std::process::ExitCode {
+    #[cfg(any(windows, target_os = "linux"))]
     let helper_args: Vec<std::ffi::OsString> = std::env::args_os().skip(1).collect();
     #[cfg(any(windows, target_os = "linux"))]
     if let Some(result) = vectorcraft_ui_egui::updates_install::helper_arguments(&helper_args) {
