@@ -12,6 +12,12 @@ use crate::state::Dialog;
 use crate::theme::{self, Accent, Brightness, Scheme, Tokens};
 use crate::{VectorcraftApp, widgets};
 
+const UPDATE_CATEGORY: &str = "Updates";
+
+fn categories() -> Vec<&'static str> {
+    PREF_CATEGORIES.iter().copied().chain([UPDATE_CATEGORY]).collect()
+}
+
 /// UI-only fields shown in the dialog (backed by `UiState`, not engine prefs).
 pub const UI_FIELDS: &[(&str, &str, &str)] = &[
     ("__smartGuides", "Smart Guides", "Smart Guides (View → Smart Guides)"),
@@ -27,11 +33,20 @@ pub fn open(app: &mut VectorcraftApp, category: Option<&str>) {
     if let Some(st) = app.session.active() {
         fields.insert("unitsGeneral".into(), json!(st.doc.units.key()));
     }
-    let cat = category.and_then(|c| PREF_CATEGORIES.iter().find(|x| x.eq_ignore_ascii_case(c))).copied().unwrap_or(PREF_CATEGORIES[0]);
+    let category_names = categories();
+    let cat = category.and_then(|c| category_names.iter().find(|x| x.eq_ignore_ascii_case(c))).copied().unwrap_or(PREF_CATEGORIES[0]);
     fields.insert("__category".into(), json!(cat));
     fields.insert("__smartGuides".into(), json!(app.ui.view.smart_guides));
     fields.insert("__snapToGrid".into(), json!(app.ui.view.snap_to_grid));
     fields.insert("__taskBar".into(), json!(app.ui.task_bar));
+    fields.insert("__updateAuto".into(), json!(app.ui.updates.automatic_checks));
+    fields.insert("__updateChannel".into(), json!(app.ui.updates.channel.label()));
+    fields.insert("__checkUpdates".into(), json!(false));
+    fields.insert("__lastUpdateCheck".into(), json!(app.ui.updates.last_successful_check));
+    #[cfg(not(target_arch = "wasm32"))]
+    fields.insert("__availableUpdate".into(), json!(app.updates_rt.available.as_ref().map(|release| release.version_label())));
+    #[cfg(target_arch = "wasm32")]
+    fields.insert("__availableUpdate".into(), Value::Null);
     app.ui.dialog = Some(Dialog { kind: "preferences".into(), fields });
 }
 
@@ -47,6 +62,11 @@ pub fn confirm(app: &mut VectorcraftApp) -> Result<Value, String> {
     app.ui.view.smart_guides = d.fields.get("__smartGuides").and_then(Value::as_bool).unwrap_or(app.ui.view.smart_guides);
     app.ui.view.snap_to_grid = d.fields.get("__snapToGrid").and_then(Value::as_bool).unwrap_or(app.ui.view.snap_to_grid);
     app.ui.task_bar = d.fields.get("__taskBar").and_then(Value::as_bool).unwrap_or(app.ui.task_bar);
+    app.ui.updates.automatic_checks = d.fields.get("__updateAuto").and_then(Value::as_bool).unwrap_or(app.ui.updates.automatic_checks);
+    app.ui.updates.channel = match d.fields.get("__updateChannel").and_then(Value::as_str) {
+        Some("Stable") => crate::updates_client::Channel::Stable,
+        _ => crate::updates_client::Channel::Beta,
+    };
     app.ui.dialog = None;
     app.ui.engine_prefs = app.session.prefs.to_json();
     app.prefs_changed = true;
@@ -165,7 +185,8 @@ pub fn show(app: &mut VectorcraftApp, ctx: &egui::Context) {
     let t = Tokens::get(ctx);
     let (mut ok, mut cancel, mut reset) = (false, false, false);
     let cat = d.str("__category");
-    let cat = PREF_CATEGORIES.iter().find(|c| **c == cat).copied().unwrap_or(PREF_CATEGORIES[0]);
+    let category_names = categories();
+    let cat = category_names.iter().find(|c| **c == cat).copied().unwrap_or(PREF_CATEGORIES[0]);
     crate::dialogs::modal::show(ctx, tl!("Preferences"), egui::Id::unique("dialog-preferences"), -20.0, 20, |ui| {
         ui.set_width(760.0);
         crate::dialogs::modal::heading(ui, tl!("Preferences"));
@@ -177,7 +198,7 @@ pub fn show(app: &mut VectorcraftApp, ctx: &egui::Context) {
                 ui.set_min_height(430.0);
                 ui.vertical(|ui| {
                     ui.spacing_mut().item_spacing.y = 1.0;
-                    for c in PREF_CATEGORIES {
+                    for c in &category_names {
                         let sel = *c == cat;
                         let text = egui::RichText::new(tl!(*c)).size(12.5).color(if sel { t.text_strong } else { t.text });
                         let b = egui::Button::selectable(sel, text).min_size(egui::vec2(184.0, 24.0));
@@ -215,12 +236,12 @@ pub fn show(app: &mut VectorcraftApp, ctx: &egui::Context) {
                     cancel = true;
                 }
                 ui.add_space(16.0);
-                let i = PREF_CATEGORIES.iter().position(|c| *c == cat).unwrap_or(0);
-                if ui.add_enabled(i + 1 < PREF_CATEGORIES.len(), egui::Button::new(tl!("Next"))).clicked() {
-                    d.fields.insert("__category".into(), json!(PREF_CATEGORIES[i + 1]));
+                let i = category_names.iter().position(|c| *c == cat).unwrap_or(0);
+                if ui.add_enabled(i + 1 < category_names.len(), egui::Button::new(tl!("Next"))).clicked() {
+                    d.fields.insert("__category".into(), json!(category_names[i + 1]));
                 }
                 if ui.add_enabled(i > 0, egui::Button::new(tl!("Previous"))).clicked() {
-                    d.fields.insert("__category".into(), json!(PREF_CATEGORIES[i - 1]));
+                    d.fields.insert("__category".into(), json!(category_names[i - 1]));
                 }
             });
         });
@@ -230,16 +251,56 @@ pub fn show(app: &mut VectorcraftApp, ctx: &egui::Context) {
             d.fields.insert(k, v);
         }
     }
+    let check_updates = d.bool("__checkUpdates");
+    let update_automatic = d.bool("__updateAuto");
+    let update_channel = d.str("__updateChannel").to_string();
     app.ui.dialog = Some(d);
     if cancel {
         app.ui.dialog = None;
     } else if ok && let Err(e) = confirm(app) {
         app.status(e);
     }
+    if check_updates {
+        app.ui.updates.automatic_checks = update_automatic;
+        app.ui.updates.channel = match update_channel.as_str() {
+            "Stable" => crate::updates_client::Channel::Stable,
+            _ => crate::updates_client::Channel::Beta,
+        };
+        app.prefs_changed = true;
+        let _ = crate::updates_ui::check(app);
+    }
 }
 
 fn category_fields(ui: &mut egui::Ui, d: &mut Dialog, cat: &str) {
     let t = Tokens::get(ui.ctx());
+    if cat == UPDATE_CATEGORY {
+        let mut automatic = d.bool("__updateAuto");
+        if ui.checkbox(&mut automatic, tl!("Automatically check for updates")).changed() {
+            d.fields.insert("__updateAuto".into(), json!(automatic));
+        }
+        ui.add_space(8.0);
+        egui::ComboBox::from_label(tl!("Update channel")).selected_text(d.str("__updateChannel")).show_ui(ui, |ui| {
+            for channel in ["Stable", "Beta"] {
+                if ui.selectable_label(d.str("__updateChannel") == channel, channel).clicked() {
+                    d.fields.insert("__updateChannel".into(), json!(channel));
+                }
+            }
+        });
+        ui.add_space(8.0);
+        ui.label(format!("Current version: {}", env!("CARGO_PKG_VERSION")));
+        if let Some(checked) = d.fields.get("__lastUpdateCheck").and_then(Value::as_i64).and_then(crate::updates_client::format_timestamp) {
+            ui.label(format!("Last checked: {checked}"));
+        } else {
+            ui.label(tl!("Last checked: Never"));
+        }
+        if let Some(version) = d.fields.get("__availableUpdate").and_then(Value::as_str) {
+            ui.label(format!("Available version: {version}"));
+        }
+        if ui.button(tl!("Check for Updates Now")).clicked() {
+            d.fields.insert("__checkUpdates".into(), json!(true));
+        }
+        return;
+    }
     let mut section = "";
     let mut first = true;
     let specs: Vec<_> = PREF_SPECS.iter().filter(|s| s.category == cat).collect();
@@ -422,6 +483,19 @@ mod tests {
     use super::*;
     use crate::Services;
     use vectorcraft_engine::Session;
+
+    #[test]
+    fn update_preferences_save_channel_and_background_check_setting() {
+        let mut app = VectorcraftApp::new(Session::new(), Services::default());
+        open(&mut app, Some(UPDATE_CATEGORY));
+        let dialog = app.ui.dialog.as_mut().unwrap();
+        assert_eq!(dialog.str("__category"), UPDATE_CATEGORY);
+        dialog.fields.insert("__updateAuto".into(), json!(false));
+        dialog.fields.insert("__updateChannel".into(), json!("Stable"));
+        confirm(&mut app).unwrap();
+        assert!(!app.ui.updates.automatic_checks);
+        assert_eq!(app.ui.updates.channel, crate::updates_client::Channel::Stable);
+    }
 
     #[test]
     fn geometric_snapping_is_a_saved_smart_guides_preference() {
@@ -703,7 +777,7 @@ mod tests {
         out.shapes.iter().for_each(|c| rects(&c.shape, &mut shown));
         // The list's rows, top to bottom: only the fourth (Units) is filled.
         let rows: Vec<_> = shown.iter().filter(|(r, _)| r.width() == 184.0 && r.height() < 30.0).collect();
-        assert_eq!(rows.len(), PREF_CATEGORIES.len(), "{shown:?}");
+        assert_eq!(rows.len(), categories().len(), "{shown:?}");
         let filled: Vec<usize> = rows.iter().enumerate().filter(|(_, (_, c))| c.a() > 0).map(|(i, _)| i).collect();
         assert_eq!(filled, vec![3], "{rows:?}");
     }

@@ -5912,7 +5912,6 @@ dependencies = [
  "chrono",
  "clipboard-win",
  "craft-print",
- "craft-update",
  "craft-window",
  "eframe",
  "egui",
@@ -6374,6 +6373,7 @@ name = "vectorcraft-ui-egui"
 version = "0.2.0-beta.1"
 dependencies = [
  "bytemuck",
+ "chrono",
  "craft-keymap",
  "craft-ui",
  "craft-update",
@@ -6381,11 +6381,14 @@ dependencies = [
  "egui_extras",
  "egui_kittest",
  "encoding_rs",
+ "flate2",
  "image",
  "log",
+ "plist",
  "rustix 1.1.5",
  "serde",
  "serde_json",
+ "tar",
  "toml",
  "vectorcraft-brush",
  "vectorcraft-cad",
@@ -6406,6 +6409,7 @@ dependencies = [
  "vectorcraft-tools",
  "wat",
  "web-time",
+ "zip",
 ]
 
 [[package]]

@@ -2679,8 +2679,7 @@ pub fn enabled(app: &VectorcraftApp, id: &str) -> bool {
         return en;
     }
     match id {
-        // Upstream VectorCraft update checks are disabled in R Vector Studio.
-        "help.checkForUpdates" => false,
+        "help.checkForUpdates" => true,
         // Save is off for a clean document/project that already has its own file.
         "file.save" => {
             if app.scientific.enabled {
@@ -3496,6 +3495,8 @@ pub fn menu_tree_named(english_names: bool) -> Vec<(&'static str, Vec<Item>)> {
                 c("FigureIDE on GitHub", "help.github"),
                 c("FigureIDE Releases", "help.releases"),
                 c("Report an Issue", "help.issues"),
+                Sep,
+                c("Check for Updates…", "help.checkForUpdates"),
                 Sep,
                 c("Search Commands…", "help.commandPalette"),
                 todos("FigureIDE Help…", "F1"),
@@ -5216,9 +5217,9 @@ mod tests {
     }
 
     #[test]
-    fn check_for_updates_is_disabled_and_hidden_from_menu() {
+    fn check_for_updates_is_available_in_help_menu() {
         let app = VectorcraftApp::new(vectorcraft_engine::Session::new(), crate::Services::default());
-        assert!(!enabled(&app, "help.checkForUpdates"));
+        assert!(enabled(&app, "help.checkForUpdates"));
 
         fn contains_command(items: &[Item], cmd: &str) -> bool {
             items.iter().any(|item| match item {
@@ -5228,7 +5229,7 @@ mod tests {
             })
         }
         let help_menu = menu_tree().into_iter().find(|(title, _)| *title == "Help").unwrap();
-        assert!(!contains_command(&help_menu.1, "help.checkForUpdates"));
+        assert!(contains_command(&help_menu.1, "help.checkForUpdates"));
     }
 
     #[test]

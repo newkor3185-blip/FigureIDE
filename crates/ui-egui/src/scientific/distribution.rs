@@ -287,10 +287,13 @@ mod tests {
     #[test]
     fn test_tagged_release_trigger_logic() {
         let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
-        let release_workflow = fs::read_to_string(root.join(".github/workflows/figureide-multiplatform-release.yml")).unwrap();
-        let windows_workflow = fs::read_to_string(root.join(".github/workflows/rvs-windows-release.yml")).unwrap();
+        let release_workflow = fs::read_to_string(root.join(".github/workflows/figureide-multiplatform-release.yml")).unwrap().replace("\r\n", "\n");
+        let windows_workflow = fs::read_to_string(root.join(".github/workflows/rvs-windows-release.yml")).unwrap().replace("\r\n", "\n");
 
-        assert!(release_workflow.contains("  workflow_dispatch:\n"), "Coordinated release workflow must support manual dispatch");
+        assert!(
+            release_workflow.lines().any(|line| line.trim() == "workflow_dispatch:"),
+            "Coordinated release workflow must support manual dispatch"
+        );
         assert!(release_workflow.contains("      draft_release:\n") && release_workflow.contains("        default: false"));
 
         let windows_job = workflow_job(&release_workflow, "windows");
@@ -357,20 +360,16 @@ mod tests {
         assert!(readme.contains("FigureIDE Portable"));
     }
 
-    // 13. No upstream VectorCraft update popup
+    // 13. Update checks target the public FigureIDE release feed
     #[test]
-    fn test_no_upstream_vectorcraft_update_popup() {
+    fn test_figureide_update_check_uses_its_official_release_feed() {
         let mut app = make_test_app();
-        app.set_startup_update_check(true);
-
-        // Verification: startup check must be firmly off
-        assert!(!app.startup_update_check(), "startup_check must remain false in R Vector Studio");
-
-        // Manual check must return an error
+        assert!(app.startup_update_check(), "FigureIDE update checks should default on");
+        assert_eq!(crate::updates_client::RELEASES_API, "https://api.github.com/repos/newkor3185-blip/FigureIDE/releases?per_page=100");
+        assert!(!crate::updates_client::RELEASES_API.to_ascii_lowercase().contains("vectorcraft"));
         let res = crate::updates_ui::check(&mut app);
-        assert!(res.is_err(), "check() must return error refusing upstream updates");
-        let err_msg = res.unwrap_err();
-        assert!(err_msg.contains("disabled in R Vector Studio"));
+        assert!(res.is_ok(), "manual FigureIDE update checks should be available");
+        assert!(app.updates_rt.manual_window_open);
     }
 
     // 14. No automatic execution of embedded R scripts
