@@ -83,6 +83,8 @@ struct App {
     pending_maximize: bool,
     /// Frames left to retry [`window::apply_pending_maximize`].
     maximize_tries: u8,
+    /// The updater keeps its backup until the new app has rendered its first frames.
+    update_confirmation_marker: Option<std::path::PathBuf>,
 }
 
 /// The parts of [`App::raw_input_hook`] that every window needs, for the OS windows of floating
@@ -187,6 +189,12 @@ impl App {
             open_files(&mut self.app, files);
         }
         self.app.tick(ctx);
+        if self.frames >= 2
+            && let Some(marker) = &self.update_confirmation_marker
+            && std::fs::write(marker, b"FigureIDE reached its first UI frames").is_ok()
+        {
+            self.update_confirmation_marker = None;
+        }
         if self.pending_maximize {
             if let Some(w) = &self.winit_window {
                 self.pending_maximize = window::apply_pending_maximize(w, true, &mut self.maximize_tries);
@@ -827,10 +835,17 @@ Without a window (converting, scripting, the MCP server), use vectorcraft-cli:
 ";
 
 fn main() -> std::process::ExitCode {
-    // Windows: the update helper is a copy of this program started with `--finish-update`.
-    #[cfg(windows)]
-    if let Some(result) = craft_update::self_update::finish(&craft_update::suite::VECTORCRAFT, &std::env::args_os().skip(1).collect::<Vec<_>>()) {
-        std::process::exit(i32::from(result.is_err()));
+    #[cfg(any(windows, target_os = "linux"))]
+    let helper_args: Vec<std::ffi::OsString> = std::env::args_os().skip(1).collect();
+    #[cfg(any(windows, target_os = "linux"))]
+    if let Some(result) = vectorcraft_ui_egui::updates_install::helper_arguments(&helper_args) {
+        return match result {
+            Ok(()) => std::process::ExitCode::SUCCESS,
+            Err(error) => {
+                eprintln!("FigureIDE update helper: {error}");
+                std::process::ExitCode::FAILURE
+            }
+        };
     }
     // Before any thread starts: the pointer must find a cursor theme on Wayland (#2450).
     #[cfg(target_os = "linux")]
@@ -843,6 +858,7 @@ fn main() -> std::process::ExitCode {
         automation_args::AutomationArgs::new(root_env("VECTORCRAFT_AUTOMATION_READ_ROOT"), root_env("VECTORCRAFT_AUTOMATION_WRITE_ROOT"));
     let mut files = Vec::new();
     let mut in_window_menus = std::env::var_os("VECTORCRAFT_IN_WINDOW_MENUS").is_some_and(|v| !v.is_empty() && v != "0");
+    let mut update_confirmation_marker = None;
     let mut args = std::env::args().skip(1);
     while let Some(a) = args.next() {
         match roots_args.consume(&a, &mut args).and_then(|root| if root { Ok(true) } else { control.consume(&a, &mut args) }) {
@@ -855,6 +871,18 @@ fn main() -> std::process::ExitCode {
         }
         match a.as_str() {
             "--in-window-menus" => in_window_menus = true,
+            "--figureide-confirm-update" => {
+                let Some(marker) = args.next() else {
+                    eprintln!("FigureIDE: the internal update confirmation path is missing");
+                    return std::process::ExitCode::FAILURE;
+                };
+                let marker = std::path::PathBuf::from(marker);
+                if !vectorcraft_ui_egui::updates_install::confirmation_marker_allowed(&marker) {
+                    eprintln!("FigureIDE: the internal update confirmation path is invalid");
+                    return std::process::ExitCode::FAILURE;
+                }
+                update_confirmation_marker = Some(marker);
+            }
             "--version" => {
                 println!("FigureIDE {}", env!("CARGO_PKG_VERSION"));
                 return std::process::ExitCode::SUCCESS;
@@ -1064,8 +1092,6 @@ fn main() -> std::process::ExitCode {
                 prefs_dir::attach_profile_store(&mut session);
                 prefs_dir::attach_plugin_store(&mut session);
                 let mut app = VectorcraftApp::new(session, services(cc.winit_window().cloned(), cc.egui_ctx.clone()));
-                // Automatic update checking against the upstream VectorCraft release channel is disabled in R Vector Studio.
-                app.set_startup_update_check(false);
                 load_prefs(&mut app, saved);
                 // The saved PDF presets live in their own folder (also read by vectorcraft-cli),
                 // which takes over from the copy the preferences file used to hold.
@@ -1174,6 +1200,7 @@ fn main() -> std::process::ExitCode {
                     winit_window,
                     pending_maximize,
                     maximize_tries: 8,
+                    update_confirmation_marker,
                 }))
             }),
         )

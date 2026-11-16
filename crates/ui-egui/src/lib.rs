@@ -70,6 +70,9 @@ mod tools_float;
 pub mod touch;
 mod ui_fonts;
 pub mod unsaved;
+pub mod updates_client;
+#[cfg(not(target_arch = "wasm32"))]
+pub mod updates_install;
 pub mod updates_ui;
 pub mod widgets;
 pub mod workspaces;

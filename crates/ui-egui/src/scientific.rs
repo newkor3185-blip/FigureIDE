@@ -459,6 +459,11 @@ impl Default for Workspace {
 }
 
 impl Workspace {
+    #[cfg(any(windows, target_os = "linux"))]
+    pub(crate) fn operation_running(&self) -> bool {
+        self.running
+    }
+
     pub(crate) fn has_linked_panels(&self, document_uid: u64) -> bool {
         self.linked_panels.iter().any(|panel| panel.document_uid == document_uid)
     }

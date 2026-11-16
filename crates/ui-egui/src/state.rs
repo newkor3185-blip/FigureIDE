@@ -325,6 +325,9 @@ pub struct UiState {
     #[serde(rename = "language", skip_serializing)]
     pub legacy_language: Option<String>,
     pub brightness: Brightness,
+    /// FigureIDE release-check settings; older preference files use the defaults.
+    #[serde(default)]
+    pub updates: crate::updates_client::Settings,
     pub dock_tab: DockTab,
     /// Tab order in the dock's tabbed group when it differs from [`DockTab::ALL`].
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -836,6 +839,7 @@ impl Default for UiState {
         Self {
             legacy_language: None,
             brightness: Brightness::MediumDark,
+            updates: crate::updates_client::Settings::default(),
             dock_tab: DockTab::Properties,
             dock_tab_order: Vec::new(),
             dock_collapsed: false,
