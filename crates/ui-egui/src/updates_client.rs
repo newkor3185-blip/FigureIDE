@@ -239,6 +239,20 @@ mod native {
         }
 
         #[test]
+        fn beta_channel_offers_versions_newer_than_v0_2_1_beta_1() {
+            let answer = body(vec![
+                release("figureide-v0.2.1", false, false, &[]),
+                release("figureide-v0.2.1-beta.2", true, false, &[]),
+                release("figureide-v0.2.1-beta.1", true, false, &[]),
+                release("figureide-v0.2.0", false, false, &[]),
+            ]);
+
+            let latest = newest_release(&answer, Channel::Beta, "0.2.1-beta.1").unwrap().unwrap();
+            assert_eq!(latest.tag, "figureide-v0.2.1");
+            assert_eq!(latest.version.unwrap().to_string(), "0.2.1");
+        }
+
+        #[test]
         fn stable_channel_excludes_semver_prereleases_even_if_github_flag_is_false() {
             let answer = body(vec![release("figureide-v1.0.0-beta.2", false, false, &[]), release("figureide-v0.9.0", true, false, &[])]);
             let latest = newest_release(&answer, Channel::Stable, "0.8.0").unwrap().unwrap();
