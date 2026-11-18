@@ -28,7 +28,7 @@ on:
       version:
         description: 'Expected application/Cargo version'
         required: true
-        default: '0.2.0-beta.1'
+        default: '0.2.1-beta.1'
         type: string
       source_ref:
         description: 'Approved source branch, tag, or commit (default: current workflow ref)'
@@ -65,7 +65,7 @@ jobs:
       - name: Validate source ref and version
         id: source
         env:
-          REQUESTED_VERSION: ${{ inputs.version || '0.2.0-beta.1' }}
+          REQUESTED_VERSION: ${{ inputs.version || '0.2.1-beta.1' }}
           REQUESTED_SOURCE_REF: ${{ inputs.source_ref }}
           PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
           PR_HEAD_REPO: ${{ github.event.pull_request.head.repo.full_name }}
