@@ -57,7 +57,7 @@ jobs:
       tag_name: ${{ steps.source.outputs.tag_name }}
     steps:
       - name: Check out source
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           ref: ${{ github.event.pull_request.head.sha || inputs.source_ref || github.sha }}
           fetch-depth: 0
@@ -159,30 +159,30 @@ jobs:
       contents: read
     steps:
       - name: Check out validated source
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           ref: ${{ needs.prepare.outputs.source_sha }}
 
       - name: Download Windows package
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: FigureIDE-Windows-x64
           path: release-artifacts/windows
 
       - name: Download Linux package
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: FigureIDE-Linux-x86_64
           path: release-artifacts/linux
 
       - name: Download macOS Apple Silicon package
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: FigureIDE-macOS-AppleSilicon
           path: release-artifacts/macos-apple-silicon
 
       - name: Download macOS Intel package
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: FigureIDE-macOS-Intel
           path: release-artifacts/macos-intel
@@ -194,7 +194,7 @@ jobs:
         run: python3 scripts/validate_figureide_release.py --directory release-artifacts --version "$RELEASE_VERSION" --commit "$SOURCE_SHA"
 
       - name: Keep validated release files available
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: FigureIDE-v${{ needs.prepare.outputs.version }}-validated-release
           path: |
@@ -215,12 +215,12 @@ jobs:
       contents: write
     steps:
       - name: Check out validated release source
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           ref: ${{ needs.prepare.outputs.source_sha }}
 
       - name: Download validated packages and checksums
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: FigureIDE-v${{ needs.prepare.outputs.version }}-validated-release
           path: release-artifacts
