@@ -17,8 +17,10 @@ pub(crate) mod graph_tab;
 mod inspector;
 pub(crate) mod linked_plot_protection;
 mod linked_plots;
+mod plot_history;
 mod plot_registry;
 pub(crate) mod project;
+mod search;
 mod source_editor;
 mod status;
 mod workspace;
@@ -37,6 +39,7 @@ use self::linked_plot_protection::{CapturedRotation, PendingUnlinkEdit};
 use self::linked_plots::apply_rendered_plot;
 #[cfg(test)]
 use self::linked_plots::show_linked_panel_entries as show_linked_panels;
+use self::plot_history::show_plot_history;
 #[cfg(test)]
 use self::plot_registry::show_plot_registry;
 #[cfg(test)]
@@ -165,6 +168,7 @@ enum PanelAction {
 enum BottomTab {
     #[default]
     Console,
+    Plots,
     #[cfg(test)]
     PlotRegistry,
     #[cfg(test)]
@@ -176,11 +180,12 @@ enum BottomTab {
 }
 
 impl BottomTab {
-    const ALL: [Self; 5] = [Self::Console, Self::Environment, Self::History, Self::Help, Self::Packages];
+    const ALL: [Self; 6] = [Self::Console, Self::Plots, Self::Environment, Self::History, Self::Help, Self::Packages];
 
     fn key(self) -> &'static str {
         match self {
             Self::Console => "console",
+            Self::Plots => "plot-history",
             #[cfg(test)]
             Self::PlotRegistry => "plots",
             #[cfg(test)]
@@ -195,6 +200,7 @@ impl BottomTab {
     fn label(self) -> &'static str {
         match self {
             Self::Console => "Console",
+            Self::Plots => "Plots",
             #[cfg(test)]
             Self::PlotRegistry => "Plot Registry",
             #[cfg(test)]
@@ -365,6 +371,8 @@ pub struct Workspace {
     console_continuation: bool,
     console_scroll_at_bottom: bool,
     plots: Vec<crate::r_session::RObject>,
+    pub(crate) plot_history: Vec<String>,
+    pub(crate) selected_plot_history: usize,
     objects: Vec<crate::r_session::RObject>,
     environment_filter: String,
     selected_object: Option<String>,
@@ -423,6 +431,7 @@ pub struct Workspace {
     pub(crate) session: std::sync::Arc<std::sync::Mutex<crate::r_session::RSession>>,
     pub(crate) session_active: bool,
     pub(crate) completion: Option<ActiveCompletion>,
+    pub(crate) editor_search: search::EditorSearch,
     pub(crate) completion_object_columns: HashMap<String, Vec<(String, String)>>,
     pub(crate) completion_namespace_cache: HashMap<(String, bool), Vec<crate::r_editor::CompletionCandidate>>,
     pub(crate) completion_request_in_flight: bool,
@@ -547,6 +556,8 @@ impl Workspace {
             console_continuation: false,
             console_scroll_at_bottom: true,
             plots: Vec::new(),
+            plot_history: Vec::new(),
+            selected_plot_history: 0,
             objects: Vec::new(),
             environment_filter: String::new(),
             selected_object: None,
@@ -602,6 +613,7 @@ impl Workspace {
             session: std::sync::Arc::new(std::sync::Mutex::new(crate::r_session::RSession::default())),
             session_active: false,
             completion: None,
+            editor_search: search::EditorSearch::default(),
             completion_object_columns: HashMap::new(),
             completion_namespace_cache: HashMap::new(),
             completion_request_in_flight: false,
@@ -958,6 +970,15 @@ pub(crate) fn handle_shortcuts(app: &mut crate::VectorcraftApp, ctx: &egui::Cont
     let Some(editor_id) = app.scientific.editor_widget_ids.get(&active_id).copied() else { return false };
     if ctx.memory(|memory| memory.focused()) != Some(editor_id) {
         return false;
+    }
+    let (find, replace) =
+        ctx.input_mut(|input| (input.consume_key(egui::Modifiers::COMMAND, egui::Key::F), input.consume_key(egui::Modifiers::COMMAND, egui::Key::H)));
+    if find || replace {
+        app.scientific.editor_search.open = true;
+        app.scientific.editor_search.replace_open = replace;
+        app.scientific.editor_search.document_id = Some(active_id);
+        app.scientific.editor_search.focus_query = true;
+        return true;
     }
     let (new_script, open_script_shortcut, save_as, save, close, previous, next, source, run) = ctx.input_mut(|input| {
         let command = egui::Modifiers::COMMAND;
@@ -2661,6 +2682,20 @@ fn poll_messages(app: &mut crate::VectorcraftApp) {
             Ok(RMessage::Execution(Ok(execution), refresh_linked, definitions)) => {
                 app.scientific.running = false;
                 app.scientific.session_active = true;
+                if !execution.plots.is_empty() {
+                    app.scientific.plot_history.extend(execution.plots.iter().cloned());
+                    while app.scientific.plot_history.len() > 10
+                        || app.scientific.plot_history.iter().map(String::len).sum::<usize>() > 32 * 1024 * 1024
+                    {
+                        if app.scientific.plot_history.is_empty() {
+                            break;
+                        }
+                        let remove = 1;
+                        app.scientific.plot_history.drain(..remove);
+                    }
+                    app.scientific.selected_plot_history = app.scientific.plot_history.len().saturating_sub(1);
+                    app.ui.r_studio_tab = BottomTab::Plots.key().into();
+                }
                 if let Some(wd) = execution.working_directory {
                     app.scientific.working_directory = Some(wd);
                 }
@@ -3635,11 +3670,12 @@ mod tests {
 
     #[test]
     fn bottom_utility_tabs_have_the_required_order_and_persisted_keys() {
-        assert_eq!(BottomTab::ALL.map(BottomTab::label), ["Console", "Environment", "History", "Help", "Packages"]);
+        assert_eq!(BottomTab::ALL.map(BottomTab::label), ["Console", "Plots", "Environment", "History", "Help", "Packages"]);
         for tab in BottomTab::ALL {
             assert_eq!(BottomTab::from_key(tab.key()), tab);
         }
         assert_eq!(BottomTab::from_key("unknown"), BottomTab::Console);
+        assert_eq!(BottomTab::from_key("plot-history"), BottomTab::Plots);
         assert_eq!(BottomTab::from_key("plots"), BottomTab::Console);
         assert_eq!(BottomTab::from_key("linked"), BottomTab::Console);
         let settings = crate::state::UiState {
@@ -5062,7 +5098,8 @@ mod tests {
             },
         ];
 
-        let exec = crate::r_session::Execution { output: "".into(), objects: imported_objects, error: None, working_directory: None };
+        let exec =
+            crate::r_session::Execution { output: "".into(), objects: imported_objects, error: None, working_directory: None, plots: Vec::new() };
 
         tx.send(super::RMessage::RDataImported { path: "C:/data/experiment.RData".into(), result: Ok((exec, 4, 0)) }).unwrap();
         super::poll_messages(&mut app);

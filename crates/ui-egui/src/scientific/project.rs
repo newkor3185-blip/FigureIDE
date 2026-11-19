@@ -2029,6 +2029,7 @@ mod tests {
             output: "Imported\n".into(),
             error: None,
             working_directory: None,
+            plots: Vec::new(),
             objects: vec![sample_r_object("counts", ""), sample_r_object("volcano", "ggplot")],
         };
 

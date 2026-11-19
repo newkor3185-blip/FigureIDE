@@ -1,7 +1,9 @@
 use super::{
-    R_CODE_LINE_GAP, R_CODE_PADDING, R_CONSOLE_INPUT_SIZE, RIndicator, Workspace, append_console_output, history_next, history_previous, r_indicator,
-    source_editor::code_style, submit_console,
+    ActiveCompletion, R_CODE_LINE_GAP, R_CODE_PADDING, R_CONSOLE_INPUT_SIZE, RIndicator, Workspace, append_console_output, history_next,
+    history_previous, r_indicator, source_editor::code_style, submit_console,
 };
+
+const CONSOLE_COMPLETION_ID: u64 = u64::MAX;
 
 pub(super) fn show_console(app: &mut crate::VectorcraftApp, ui: &mut egui::Ui) {
     ui.scope(|ui| {
@@ -19,11 +21,11 @@ fn show_console_contents(app: &mut crate::VectorcraftApp, ui: &mut egui::Ui) {
     });
     ui.add_space(2.0);
     let t = crate::theme::Tokens::get(ui.ctx());
-    let lines: Vec<_> = app.scientific.console_output.split_terminator('\n').collect();
+    let lines: Vec<_> = app.scientific.console_output.split_terminator('\n').map(str::to_owned).collect();
     let row_height = ui.text_style_height(&egui::TextStyle::Monospace).max(1.0);
     let stick_to_bottom = app.scientific.console_scroll_at_bottom;
     if app.scientific.console_input.contains('\r') {
-        app.scientific.console_input = app.scientific.console_input.replace("\r\n", "\n").replace('\r', "\n");
+        app.scientific.console_input = normalize_console_paste(&app.scientific.console_input);
     }
     let console_input_before = app.scientific.console_input.clone();
     let input_was_focused = app.scientific.console_input_id.is_some_and(|id| ui.memory(|m| m.has_focus(id)));
@@ -61,7 +63,7 @@ fn show_console_contents(app: &mut crate::VectorcraftApp, ui: &mut egui::Ui) {
                     ui.scope_builder(egui::UiBuilder::new().id_salt("console-visible-output").max_rect(visible), |ui| {
                         ui.skip_ahead_auto_ids(first);
                         for row in first..last {
-                            if let Some(line) = lines.get(row).copied() {
+                            if let Some(line) = lines.get(row) {
                                 let color = console_line_color(line, ui.visuals());
                                 ui.add(
                                     egui::Label::new(egui::RichText::new(line).monospace().color(color))
@@ -98,6 +100,8 @@ fn show_console_contents(app: &mut crate::VectorcraftApp, ui: &mut egui::Ui) {
                                                 ui.spacing_mut().item_spacing.x = 0.0;
                                                 let id = ui.make_persistent_id("r-studio-console-input");
                                                 app.scientific.console_input_id = Some(id);
+                                                let completion_accepted_enter =
+                                                    handle_console_completion(&mut app.scientific, ui, id, input_was_focused);
                                                 if app.scientific.pending_console_focus {
                                                     ui.memory_mut(|m| m.request_focus(id));
                                                 }
@@ -136,11 +140,20 @@ fn show_console_contents(app: &mut crate::VectorcraftApp, ui: &mut egui::Ui) {
                                                         .desired_rows(1)
                                                         .hint_text(egui::RichText::new("Enter R code").font(input_font.clone()).color(t.text_dim)),
                                                 );
-                                                if app.scientific.console_input.contains('\r') {
-                                                    app.scientific.console_input =
-                                                        app.scientific.console_input.replace("\r\n", "\n").replace('\r', "\n");
+                                                let normalized = normalize_console_paste(&app.scientific.console_input);
+                                                if normalized != app.scientific.console_input {
+                                                    app.scientific.console_input = normalized;
                                                 }
-                                                response
+                                                if response.changed()
+                                                    && app.scientific.completion.as_ref().is_some_and(|completion| {
+                                                        completion.script_id == CONSOLE_COMPLETION_ID
+                                                            && completion.source_revision != app.scientific.console_input
+                                                    })
+                                                {
+                                                    app.scientific.completion = None;
+                                                }
+                                                show_console_completion(&app.scientific, ui, response.rect);
+                                                (response, completion_accepted_enter)
                                             })
                                             .inner
                                         })
@@ -149,7 +162,7 @@ fn show_console_contents(app: &mut crate::VectorcraftApp, ui: &mut egui::Ui) {
                                 .inner
                         })
                         .inner;
-                    if response.changed() || app.scientific.pending_console_focus {
+                    if response.0.changed() || app.scientific.pending_console_focus {
                         // Reveal the prompt's left edge, rather than right-aligning the entire
                         // editor response (whose layout may include rounding or frame margins).
                         ui.scroll_to_rect(egui::Rect::from_min_size(input_rect.min, egui::vec2(1.0, input_height)), Some(egui::Align::Max));
@@ -160,7 +173,7 @@ fn show_console_contents(app: &mut crate::VectorcraftApp, ui: &mut egui::Ui) {
         .inner;
     let max_offset = (transcript.content_size.y - transcript.inner_rect.height()).max(0.0);
     app.scientific.console_scroll_at_bottom = max_offset - transcript.state.clamped_offset().y <= row_height;
-    let input_response = transcript.inner;
+    let (input_response, completion_accepted_enter) = transcript.inner;
     {
         let response = input_response;
         if app.scientific.pending_console_focus {
@@ -171,7 +184,7 @@ fn show_console_contents(app: &mut crate::VectorcraftApp, ui: &mut egui::Ui) {
         // Still handle that keystroke for the Console that owned it at frame start.
         let input_focused = response.has_focus() || input_was_focused;
         let enter_pressed = ui.input(|input| input.key_pressed(egui::Key::Enter));
-        let submit = enter_pressed && input_focused;
+        let submit = enter_pressed && input_focused && !completion_accepted_enter;
         let (history_up, history_down, clear, cancel) = ui.input(|input| {
             if !input_focused {
                 return (false, false, false, false);
@@ -224,6 +237,130 @@ fn show_console_contents(app: &mut crate::VectorcraftApp, ui: &mut egui::Ui) {
     }
 }
 
+fn normalize_console_paste(input: &str) -> String {
+    input.replace("\u{1b}[200~", "").replace("\u{1b}[201~", "").replace("\r\n", "\n").replace('\r', "\n")
+}
+
+fn handle_console_completion(workspace: &mut Workspace, ui: &mut egui::Ui, editor_id: egui::Id, focused: bool) -> bool {
+    if !focused {
+        return false;
+    }
+    let active = workspace.completion.as_ref().is_some_and(|completion| completion.script_id == CONSOLE_COMPLETION_ID);
+    let (tab, enter, escape, down, up) = ui.input_mut(|input| {
+        let tab = input.consume_key(egui::Modifiers::NONE, egui::Key::Tab);
+        if active {
+            (
+                tab,
+                input.consume_key(egui::Modifiers::NONE, egui::Key::Enter),
+                input.consume_key(egui::Modifiers::NONE, egui::Key::Escape),
+                input.consume_key(egui::Modifiers::NONE, egui::Key::ArrowDown),
+                input.consume_key(egui::Modifiers::NONE, egui::Key::ArrowUp),
+            )
+        } else {
+            (tab, false, false, false, false)
+        }
+    });
+    if active {
+        if escape {
+            workspace.completion = None;
+            return false;
+        }
+        if let Some(completion) = workspace.completion.as_mut() {
+            if down && !completion.candidates.is_empty() {
+                completion.selected = (completion.selected + 1) % completion.candidates.len();
+            }
+            if up && !completion.candidates.is_empty() {
+                completion.selected = completion.selected.checked_sub(1).unwrap_or(completion.candidates.len() - 1);
+            }
+        }
+        if (tab || enter)
+            && let Some(completion) = workspace.completion.take()
+        {
+            if let Some(candidate) = completion.candidates.get(completion.selected) {
+                let mut state = egui::TextEdit::load_state(ui.ctx(), editor_id).unwrap_or_default();
+                let text = &mut workspace.console_input;
+                let before = state
+                    .cursor
+                    .char_range()
+                    .unwrap_or_else(|| egui::text::CCursorRange::one(egui::text::CCursor::new(completion.context.replace_end_char)));
+                let mut undoer = state.undoer();
+                undoer.add_undo(&(before, text.clone()));
+                let cursor = crate::r_editor::apply_completion(text, &completion.context, candidate);
+                let after = egui::text::CCursorRange::one(egui::text::CCursor::new(cursor));
+                undoer.add_undo(&(after, text.clone()));
+                state.set_undoer(undoer);
+                state.cursor.set_char_range(Some(after));
+                state.store(ui.ctx(), editor_id);
+            }
+            return enter;
+        }
+        return false;
+    }
+    if !tab {
+        return false;
+    }
+    let state = egui::TextEdit::load_state(ui.ctx(), editor_id).unwrap_or_default();
+    let cursor = state.cursor.char_range().map(|range| usize::from(range.primary.index)).unwrap_or_else(|| workspace.console_input.chars().count());
+    let Some(context) = crate::r_editor::completion_context_at(&workspace.console_input, cursor) else {
+        return false;
+    };
+    let candidates = super::source_editor::build_completion_candidates(workspace, CONSOLE_COMPLETION_ID, &workspace.console_input, &context);
+    if candidates.is_empty() {
+        return false;
+    }
+    let revision = workspace.console_input.clone();
+    workspace.completion = Some(ActiveCompletion {
+        script_id: CONSOLE_COMPLETION_ID,
+        source_revision: revision.clone(),
+        context: context.clone(),
+        candidates,
+        selected: 0,
+        scroll_to_selected: true,
+    });
+    super::source_editor::request_completion_metadata(workspace, CONSOLE_COMPLETION_ID, revision, &context);
+    if workspace.completion.as_ref().is_some_and(|completion| completion.candidates.len() == 1)
+        && let Some(completion) = workspace.completion.take()
+        && let Some(candidate) = completion.candidates.first()
+    {
+        let mut state = egui::TextEdit::load_state(ui.ctx(), editor_id).unwrap_or_default();
+        let text = &mut workspace.console_input;
+        let before =
+            state.cursor.char_range().unwrap_or_else(|| egui::text::CCursorRange::one(egui::text::CCursor::new(completion.context.replace_end_char)));
+        let mut undoer = state.undoer();
+        undoer.add_undo(&(before, text.clone()));
+        let cursor = crate::r_editor::apply_completion(text, &completion.context, candidate);
+        let after = egui::text::CCursorRange::one(egui::text::CCursor::new(cursor));
+        undoer.add_undo(&(after, text.clone()));
+        state.set_undoer(undoer);
+        state.cursor.set_char_range(Some(after));
+        state.store(ui.ctx(), editor_id);
+    }
+    false
+}
+
+fn show_console_completion(workspace: &Workspace, ui: &mut egui::Ui, anchor: egui::Rect) {
+    let Some(completion) = workspace.completion.as_ref().filter(|completion| completion.script_id == CONSOLE_COMPLETION_ID) else {
+        return;
+    };
+    egui::Area::new(ui.make_persistent_id("r-console-completion-popup"))
+        .order(egui::Order::Foreground)
+        .fixed_pos(egui::pos2(anchor.left(), (anchor.top() - 4.0).max(ui.clip_rect().top())))
+        .show(ui.ctx(), |ui| {
+            egui::Frame::popup(ui.style()).show(ui, |ui| {
+                ui.set_max_height(160.0);
+                egui::ScrollArea::vertical().show(ui, |ui| {
+                    for (index, candidate) in completion.candidates.iter().take(30).enumerate() {
+                        let label = candidate
+                            .signature
+                            .as_ref()
+                            .map_or_else(|| candidate.name.clone(), |signature| format!("{} {}", candidate.name, signature));
+                        ui.selectable_label(index == completion.selected, label).on_hover_text(&candidate.detail);
+                    }
+                });
+            });
+        });
+}
+
 pub(super) fn remove_console_enter_newline(input: &mut String, before_enter: &str) {
     if input.len() != before_enter.len() + 1 {
         return;
@@ -271,4 +408,15 @@ fn show_console_status(workspace: &Workspace, ui: &mut egui::Ui) {
     ui.colored_label(color, format!("● {label}")).on_hover_text(
         "Console output is selectable and copyable. R code cannot be safely interrupted in this session; Stop R ends the session and loses its in-memory objects.",
     );
+}
+
+#[cfg(test)]
+mod tests {
+    use super::normalize_console_paste;
+
+    #[test]
+    fn paste_normalization_preserves_unicode_multiline_and_indentation() {
+        assert_eq!(normalize_console_paste("한글\tvalue <- 'a\\b'\r\nprint(value)\r"), "한글\tvalue <- 'a\\b'\nprint(value)\n");
+        assert_eq!(normalize_console_paste("\u{1b}[200~x <- 1\nprint(x)\u{1b}[201~"), "x <- 1\nprint(x)");
+    }
 }

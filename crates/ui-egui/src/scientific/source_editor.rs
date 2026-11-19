@@ -10,6 +10,7 @@ pub(super) fn code_style(ui: &mut egui::Ui) {
 
 pub(super) fn show_source_editor(workspace: &mut Workspace, ui: &mut egui::Ui, height: f32) {
     let active_id = workspace.active_script_id;
+    show_search_bar(workspace, ui, active_id);
     let mut popup_anchor = None;
     let mut editor_widget_id = None;
     let response = ui
@@ -420,7 +421,15 @@ pub(super) fn show_source_editor(workspace: &mut Workspace, ui: &mut egui::Ui, h
                                             let script = &mut script_doc.text;
                                             let cache = &mut script_doc.highlight_cache;
                                             let mut layouter = |ui: &egui::Ui, text: &dyn egui::TextBuffer, _: f32| {
-                                                let job = crate::r_editor::layout_job(ui, text.as_str(), f32::INFINITY, cache);
+                                                let mut job = crate::r_editor::layout_job(ui, text.as_str(), f32::INFINITY, cache);
+                                                let matches = super::search::matches(text.as_str(), &workspace.editor_search).unwrap_or_default();
+                                                super::search::highlight_layout_job(
+                                                    &mut job,
+                                                    &matches,
+                                                    Some(workspace.editor_search.current_match),
+                                                    egui::Color32::from_rgb(120, 95, 20),
+                                                    egui::Color32::from_rgb(170, 85, 20),
+                                                );
                                                 ui.fonts_mut(|fonts| fonts.layout_job(job))
                                             };
                                             let output = egui::TextEdit::multiline(script)
@@ -589,6 +598,116 @@ pub(super) fn show_source_editor(workspace: &mut Workspace, ui: &mut egui::Ui, h
     if let (Some(editor_id), Some(anchor)) = (editor_widget_id, popup_anchor) {
         show_completion_popup(workspace, ui, editor_id, active_id, anchor.left_bottom());
     }
+}
+
+fn show_search_bar(workspace: &mut Workspace, ui: &mut egui::Ui, active_id: u64) {
+    if workspace.editor_search.document_id != Some(active_id) {
+        workspace.editor_search.document_id = Some(active_id);
+        workspace.editor_search.current_match = 0;
+    }
+    if !workspace.editor_search.open {
+        return;
+    }
+    let Some(script_idx) = workspace.scripts.iter().position(|script| script.id == active_id) else { return };
+    let editor_id = ui.make_persistent_id("scientific-r-script-editor").with(active_id);
+    let bar = ui.horizontal_wrapped(|ui| {
+        let query_id = ui.make_persistent_id(("r-source-search-query", active_id));
+        let query = ui.add(egui::TextEdit::singleline(&mut workspace.editor_search.query).id(query_id).hint_text("Find"));
+        if workspace.editor_search.focus_query {
+            query.request_focus();
+            workspace.editor_search.focus_query = false;
+        }
+        ui.checkbox(&mut workspace.editor_search.case_sensitive, "Aa").on_hover_text("Match case");
+        ui.checkbox(&mut workspace.editor_search.whole_word, "Word");
+        ui.checkbox(&mut workspace.editor_search.regular_expression, ".*").on_hover_text("Regular expression");
+        let source = &workspace.scripts[script_idx].text;
+        let ranges = super::search::matches(source, &workspace.editor_search).unwrap_or_default();
+        if !ranges.is_empty() {
+            workspace.editor_search.current_match %= ranges.len();
+        } else {
+            workspace.editor_search.current_match = 0;
+        }
+        if ui.small_button("↑").clicked() && !ranges.is_empty() {
+            workspace.editor_search.current_match = (workspace.editor_search.current_match + ranges.len() - 1) % ranges.len();
+        }
+        if ui.small_button("↓").clicked() && !ranges.is_empty() {
+            workspace.editor_search.current_match = (workspace.editor_search.current_match + 1) % ranges.len();
+        }
+        ui.label(if ranges.is_empty() { "0/0".to_owned() } else { format!("{}/{}", workspace.editor_search.current_match + 1, ranges.len()) });
+        if workspace.editor_search.replace_open {
+            ui.add(egui::TextEdit::singleline(&mut workspace.editor_search.replacement).hint_text("Replace"));
+            if ui.small_button("Replace").clicked()
+                && let Some(range) = ranges.get(workspace.editor_search.current_match).cloned()
+            {
+                let text = &mut workspace.scripts[script_idx].text;
+                let before = egui::TextEdit::load_state(ui.ctx(), editor_id).unwrap_or_default().cursor.char_range();
+                let mut state = egui::TextEdit::load_state(ui.ctx(), editor_id).unwrap_or_default();
+                let mut undoer = state.undoer();
+                if let Some(before) = before {
+                    undoer.add_undo(&(before, text.clone()));
+                }
+                let cursor = range.start;
+                if super::search::replace_current(text, range, &workspace.editor_search).is_ok() {
+                    let after = egui::text::CCursorRange::one(egui::text::CCursor::new(text[..cursor.min(text.len())].chars().count()));
+                    undoer.add_undo(&(after, text.clone()));
+                    state.set_undoer(undoer);
+                    state.cursor.set_char_range(Some(after));
+                    state.store(ui.ctx(), editor_id);
+                }
+            }
+            if ui.small_button("Replace all").clicked() {
+                let text = &mut workspace.scripts[script_idx].text;
+                let mut state = egui::TextEdit::load_state(ui.ctx(), editor_id).unwrap_or_default();
+                let before = state.cursor.char_range().unwrap_or_else(|| egui::text::CCursorRange::one(egui::text::CCursor::new(0)));
+                let mut undoer = state.undoer();
+                undoer.add_undo(&(before, text.clone()));
+                if super::search::replace_all(text, &workspace.editor_search).unwrap_or(0) > 0 {
+                    let after = egui::text::CCursorRange::one(egui::text::CCursor::new(text.chars().count()));
+                    undoer.add_undo(&(after, text.clone()));
+                    state.set_undoer(undoer);
+                    state.cursor.set_char_range(Some(after));
+                    state.store(ui.ctx(), editor_id);
+                }
+            }
+        }
+        if ui.small_button(if workspace.editor_search.replace_open { "Hide replace" } else { "Replace" }).clicked() {
+            workspace.editor_search.replace_open = !workspace.editor_search.replace_open;
+        }
+        if ui.small_button("×").clicked() {
+            workspace.editor_search.open = false;
+            ui.memory_mut(|memory| memory.request_focus(editor_id));
+        }
+        ranges.get(workspace.editor_search.current_match).cloned()
+    });
+    let (escape, next, previous) = ui.input_mut(|input| {
+        (
+            input.consume_key(egui::Modifiers::NONE, egui::Key::Escape),
+            input.consume_key(egui::Modifiers::NONE, egui::Key::Enter),
+            input.consume_key(egui::Modifiers::SHIFT, egui::Key::Enter),
+        )
+    });
+    if escape {
+        workspace.editor_search.open = false;
+        ui.memory_mut(|memory| memory.request_focus(editor_id));
+    }
+    let ranges = super::search::matches(&workspace.scripts[script_idx].text, &workspace.editor_search).unwrap_or_default();
+    if !ranges.is_empty() {
+        if next {
+            workspace.editor_search.current_match = (workspace.editor_search.current_match + 1) % ranges.len();
+        }
+        if previous {
+            workspace.editor_search.current_match = workspace.editor_search.current_match.checked_sub(1).unwrap_or(ranges.len() - 1);
+        }
+    }
+    if let Some(range) = ranges.get(workspace.editor_search.current_match).cloned() {
+        let source = &workspace.scripts[script_idx].text;
+        let start = source.get(..range.start).map_or(0, |prefix| prefix.chars().count());
+        let end = source.get(..range.end).map_or(start, |prefix| prefix.chars().count());
+        let mut state = egui::TextEdit::load_state(ui.ctx(), editor_id).unwrap_or_default();
+        state.cursor.set_char_range(Some(egui::text::CCursorRange::two(egui::text::CCursor::new(start), egui::text::CCursor::new(end))));
+        state.store(ui.ctx(), editor_id);
+    }
+    let _ = bar.response;
 }
 
 fn insert_indentation_spaces(ctx: &egui::Context, editor_id: egui::Id, text: &mut String, cursor_idx: usize) {
