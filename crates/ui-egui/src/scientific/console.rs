@@ -145,12 +145,13 @@ fn show_console_contents(app: &mut crate::VectorcraftApp, ui: &mut egui::Ui) {
                                                     app.scientific.console_input = normalized;
                                                 }
                                                 if response.changed()
-                                                    && app.scientific.completion.as_ref().is_some_and(|completion| {
-                                                        completion.script_id == CONSOLE_COMPLETION_ID
-                                                            && completion.source_revision != app.scientific.console_input
-                                                    })
+                                                    && app
+                                                        .scientific
+                                                        .completion
+                                                        .as_ref()
+                                                        .is_some_and(|completion| completion.script_id == CONSOLE_COMPLETION_ID)
                                                 {
-                                                    app.scientific.completion = None;
+                                                    refresh_console_completion(&mut app.scientific, ui.ctx(), id);
                                                 }
                                                 show_console_completion(&app.scientific, ui, response.rect);
                                                 (response, completion_accepted_enter)
@@ -241,6 +242,33 @@ fn normalize_console_paste(input: &str) -> String {
     input.replace("\u{1b}[200~", "").replace("\u{1b}[201~", "").replace("\r\n", "\n").replace('\r', "\n")
 }
 
+fn refresh_console_completion(workspace: &mut Workspace, ctx: &egui::Context, editor_id: egui::Id) {
+    let state = egui::TextEdit::load_state(ctx, editor_id);
+    let cursor = state
+        .and_then(|state| state.cursor.char_range())
+        .map(|range| usize::from(range.primary.index))
+        .unwrap_or_else(|| workspace.console_input.chars().count());
+    let text = workspace.console_input.clone();
+    let Some(context) = crate::r_editor::completion_context_at(&text, cursor) else {
+        workspace.completion = None;
+        return;
+    };
+    let candidates = super::source_editor::build_completion_candidates(workspace, CONSOLE_COMPLETION_ID, &text, &context);
+    let is_argument_context = matches!(context.kind, crate::r_editor::CompletionContextKind::Argument { .. });
+    if candidates.is_empty() && !is_argument_context {
+        workspace.completion = None;
+        return;
+    }
+    if let Some(active) = workspace.completion.as_mut() {
+        active.context = context.clone();
+        active.source_revision = text.clone();
+        active.candidates = candidates;
+        active.selected = 0;
+        active.scroll_to_selected = true;
+    }
+    super::source_editor::request_completion_metadata(workspace, CONSOLE_COMPLETION_ID, text, &context);
+}
+
 fn handle_console_completion(workspace: &mut Workspace, ui: &mut egui::Ui, editor_id: egui::Id, focused: bool) -> bool {
     if !focused {
         return false;
@@ -305,7 +333,8 @@ fn handle_console_completion(workspace: &mut Workspace, ui: &mut egui::Ui, edito
         return false;
     };
     let candidates = super::source_editor::build_completion_candidates(workspace, CONSOLE_COMPLETION_ID, &workspace.console_input, &context);
-    if candidates.is_empty() {
+    let is_argument_context = matches!(context.kind, crate::r_editor::CompletionContextKind::Argument { .. });
+    if candidates.is_empty() && !is_argument_context {
         return false;
     }
     let revision = workspace.console_input.clone();
@@ -318,7 +347,8 @@ fn handle_console_completion(workspace: &mut Workspace, ui: &mut egui::Ui, edito
         scroll_to_selected: true,
     });
     super::source_editor::request_completion_metadata(workspace, CONSOLE_COMPLETION_ID, revision, &context);
-    if workspace.completion.as_ref().is_some_and(|completion| completion.candidates.len() == 1)
+    if !is_argument_context
+        && workspace.completion.as_ref().is_some_and(|completion| completion.candidates.len() == 1)
         && let Some(completion) = workspace.completion.take()
         && let Some(candidate) = completion.candidates.first()
     {

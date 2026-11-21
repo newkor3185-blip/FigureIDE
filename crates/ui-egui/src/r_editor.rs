@@ -759,6 +759,7 @@ pub(crate) fn char_to_byte(source: &str, index: usize) -> usize {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) enum CompletionContextKind {
     General,
+    Argument { function_name: String, used_names: Vec<String>, dispatch_symbol: Option<String> },
     MemberAccess { object: String, bracket: bool, quote: Option<char> },
     Namespace { package: String, internal: bool },
     Path { quote: char, raw_path: String },
@@ -776,6 +777,8 @@ pub(crate) struct CompletionContext {
 pub(crate) enum CompletionCandidateKind {
     Function,
     Variable,
+    #[cfg_attr(target_arch = "wasm32", allow(dead_code))]
+    Argument,
     Column,
     Keyword,
     Constant,
@@ -797,6 +800,10 @@ pub(crate) struct CompletionCandidate {
 pub(crate) fn completion_context_at(source: &str, cursor_char: usize) -> Option<CompletionContext> {
     let cursor_char = cursor_char.min(source.chars().count());
     let cursor_byte = char_to_byte(source, cursor_char);
+
+    if let Some(context) = argument_completion_context_at(source, cursor_char) {
+        return Some(context);
+    }
 
     // 1. Check if cursor is inside a comment or ordinary string literal.
     let tokens = tokenize(source);
@@ -951,12 +958,232 @@ pub(crate) fn completion_context_at(source: &str, cursor_char: usize) -> Option<
     None
 }
 
+/// Detect an unfinished named-argument position in the innermost function call.
+/// The scan uses the existing R lexer spans so punctuation inside strings/comments is ignored.
+pub(crate) fn argument_completion_context_at(source: &str, cursor_char: usize) -> Option<CompletionContext> {
+    let cursor_char = cursor_char.min(source.chars().count());
+    let cursor_byte = char_to_byte(source, cursor_char);
+    let spans = tokenize_spans(source);
+    for (start, end, kind) in &spans {
+        if matches!(kind, TokenKind::String | TokenKind::Comment) && cursor_byte >= *start && cursor_byte < *end {
+            return None;
+        }
+    }
+    let excluded = spans.into_iter().filter(|(_, _, kind)| matches!(kind, TokenKind::String | TokenKind::Comment)).collect::<Vec<_>>();
+    let mut delimiters = Vec::<(char, usize)>::new();
+    let mut span_index = 0;
+    for (byte, ch) in source.char_indices().take_while(|(byte, _)| *byte < cursor_byte) {
+        while excluded.get(span_index).is_some_and(|(_, end, _)| *end <= byte) {
+            span_index += 1;
+        }
+        if let Some((start, end, _)) = excluded.get(span_index)
+            && byte >= *start
+            && byte < *end
+        {
+            continue;
+        }
+        match ch {
+            '(' | '[' | '{' => delimiters.push((ch, byte)),
+            ')' | ']' | '}' => {
+                let matching = match ch {
+                    ')' => '(',
+                    ']' => '[',
+                    '}' => '{',
+                    _ => continue,
+                };
+                if let Some(index) = delimiters.iter().rposition(|(open, _)| *open == matching) {
+                    delimiters.truncate(index);
+                }
+            }
+            _ => {}
+        }
+    }
+    let (_, open_byte) = delimiters.iter().rev().find(|(open, _)| *open == '(').copied()?;
+    let function_name = call_head_before(source, open_byte)?;
+    let inside = source.get(open_byte + 1..cursor_byte)?;
+    let (segments, current_start) = top_level_argument_segments(inside, open_byte + 1, &excluded);
+    let current = source.get(current_start..cursor_byte)?;
+    if top_level_equal_byte(current, &local_excluded_spans(&excluded, current_start)).is_some() {
+        return None;
+    }
+    let mut prefix_start_in_current = current.len();
+    for (byte, ch) in current.char_indices().rev() {
+        if ch == '_' || ch == '.' || ch.is_alphanumeric() {
+            prefix_start_in_current = byte;
+        } else {
+            break;
+        }
+    }
+    let prefix = current.get(prefix_start_in_current..)?;
+    if prefix.chars().any(|ch| !(ch == '_' || ch == '.' || ch.is_alphanumeric())) {
+        return None;
+    }
+    // A completed bare first argument is usually a positional value, not an
+    // unfinished argument name. Keep the existing object completion path for
+    // calls such as read.csv(df), while open calls such as read.csv(fi remain
+    // eligible for formal-name completion.
+    if !prefix.is_empty() && source.get(cursor_byte..).is_some_and(|after| after.trim_start().starts_with(')')) {
+        return None;
+    }
+    if !current.get(..prefix_start_in_current).unwrap_or_default().trim().is_empty() {
+        return None;
+    }
+    let prefix_start_byte = current_start.saturating_add(prefix_start_in_current);
+    let mut used_names = Vec::new();
+    for (segment, segment_byte) in &segments {
+        let local_excluded = local_excluded_spans(&excluded, *segment_byte);
+        if let Some(equal) = top_level_equal_byte(segment, &local_excluded) {
+            let name = segment.get(..equal).unwrap_or_default().trim();
+            if is_r_argument_name(name) {
+                used_names.push(name.to_owned());
+            }
+        }
+    }
+    let dispatch_symbol =
+        segments.first().and_then(|(segment, segment_byte)| simple_symbol_value(segment, &local_excluded_spans(&excluded, *segment_byte)));
+    Some(CompletionContext {
+        kind: CompletionContextKind::Argument { function_name, used_names, dispatch_symbol },
+        prefix: prefix.to_owned(),
+        replace_start_char: source.get(..prefix_start_byte).map_or(cursor_char, |before| before.chars().count()),
+        replace_end_char: cursor_char,
+    })
+}
+
+fn call_head_before(source: &str, open_byte: usize) -> Option<String> {
+    let before = source.get(..open_byte)?.trim_end();
+    let end = before.len();
+    let mut start = end;
+    for (byte, ch) in before.char_indices().rev() {
+        if ch == '_' || ch == '.' || ch.is_alphanumeric() {
+            start = byte;
+        } else {
+            break;
+        }
+    }
+    let function = before.get(start..end)?;
+    if function.is_empty() || function.chars().next().is_some_and(|ch| ch.is_ascii_digit()) {
+        return None;
+    }
+    let namespace_end = before.get(..start)?.trim_end();
+    if namespace_end.ends_with(":::") {
+        let package_end = namespace_end.len() - 3;
+        let package_before = namespace_end.get(..package_end)?.trim_end();
+        let package_start = package_before
+            .char_indices()
+            .rev()
+            .find(|(_, ch)| !(*ch == '_' || *ch == '.' || ch.is_alphanumeric()))
+            .map_or(0, |(byte, ch)| byte + ch.len_utf8());
+        let package = package_before.get(package_start..)?;
+        return (!package.is_empty()).then(|| format!("{package}:::{function}"));
+    }
+    if namespace_end.ends_with("::") {
+        let package_end = namespace_end.len() - 2;
+        let package_before = namespace_end.get(..package_end)?.trim_end();
+        let package_start = package_before
+            .char_indices()
+            .rev()
+            .find(|(_, ch)| !(*ch == '_' || *ch == '.' || ch.is_alphanumeric()))
+            .map_or(0, |(byte, ch)| byte + ch.len_utf8());
+        let package = package_before.get(package_start..)?;
+        return (!package.is_empty()).then(|| format!("{package}::{function}"));
+    }
+    if namespace_end.ends_with(['$', '@', ')', ']']) {
+        return None;
+    }
+    (namespace_end.is_empty() || namespace_end.ends_with(|ch: char| !ch.is_alphanumeric() && ch != '_' && ch != '.')).then(|| function.to_owned())
+}
+
+fn top_level_argument_segments(source: &str, absolute_start: usize, excluded: &[(usize, usize, TokenKind)]) -> (Vec<(String, usize)>, usize) {
+    let mut segments = Vec::new();
+    let mut local_stack = Vec::new();
+    let mut segment_start = 0;
+    for (byte, ch) in source.char_indices() {
+        if excluded.iter().any(|(start, end, _)| *start <= absolute_start + byte && absolute_start + byte < *end) {
+            continue;
+        }
+        match ch {
+            '(' | '[' | '{' => local_stack.push(ch),
+            ')' | ']' | '}' => {
+                local_stack.pop();
+            }
+            ',' if local_stack.is_empty() => {
+                segments.push((source.get(segment_start..byte).unwrap_or_default().to_owned(), absolute_start + segment_start));
+                segment_start = byte + ch.len_utf8();
+            }
+            _ => {}
+        }
+    }
+    (segments, absolute_start + segment_start)
+}
+
+fn local_excluded_spans(excluded: &[(usize, usize, TokenKind)], absolute_start: usize) -> Vec<(usize, usize, TokenKind)> {
+    excluded
+        .iter()
+        .filter_map(|(start, end, kind)| {
+            if *end <= absolute_start { None } else { Some((start.saturating_sub(absolute_start), end.saturating_sub(absolute_start), *kind)) }
+        })
+        .collect()
+}
+
+fn top_level_equal_byte(source: &str, excluded: &[(usize, usize, TokenKind)]) -> Option<usize> {
+    let mut stack = Vec::new();
+    for (byte, ch) in source.char_indices() {
+        if excluded.iter().any(|(start, end, _)| *start <= byte && byte < *end) {
+            continue;
+        }
+        match ch {
+            '(' | '[' | '{' => stack.push(ch),
+            ')' | ']' | '}' => {
+                stack.pop();
+            }
+            '=' if stack.is_empty() => return Some(byte),
+            _ => {}
+        }
+    }
+    None
+}
+
+fn is_r_argument_name(name: &str) -> bool {
+    !name.is_empty()
+        && name.chars().enumerate().all(|(index, ch)| ch == '_' || ch == '.' || ch.is_alphanumeric() && (index > 0 || !ch.is_ascii_digit()))
+}
+
+fn simple_symbol_value(source: &str, excluded: &[(usize, usize, TokenKind)]) -> Option<String> {
+    let segment = source.trim();
+    if top_level_equal_byte(segment, excluded).is_some() || !is_r_argument_name(segment) {
+        return None;
+    }
+    Some(segment.to_owned())
+}
+
 pub(crate) fn apply_completion(source: &mut String, ctx: &CompletionContext, candidate: &CompletionCandidate) -> usize {
     let start_byte = char_to_byte(source, ctx.replace_start_char);
     let end_byte = char_to_byte(source, ctx.replace_end_char);
     let rest = source.get(end_byte..).unwrap_or_default().to_owned();
 
     match &ctx.kind {
+        CompletionContextKind::Argument { .. } => {
+            source.replace_range(start_byte..end_byte, &candidate.name);
+            let inserted_end = start_byte.saturating_add(candidate.name.len());
+            if candidate.name == "..." {
+                return ctx.replace_start_char.saturating_add(candidate.name.chars().count());
+            }
+            let tail = source.get(inserted_end..).unwrap_or_default();
+            let whitespace = tail.chars().take_while(|ch| ch.is_whitespace()).map(char::len_utf8).sum::<usize>();
+            let after_space = tail.get(whitespace..).unwrap_or_default();
+            if after_space.starts_with('=') {
+                let after_equal = after_space.get(1..).unwrap_or_default();
+                let after_equal_space = after_equal.chars().take_while(|ch| ch.is_whitespace()).map(char::len_utf8).sum::<usize>();
+                ctx.replace_start_char
+                    .saturating_add(candidate.name.chars().count())
+                    .saturating_add(whitespace)
+                    .saturating_add(1)
+                    .saturating_add(after_equal_space)
+            } else {
+                source.insert_str(inserted_end, " = ");
+                ctx.replace_start_char.saturating_add(candidate.name.chars().count()).saturating_add(3)
+            }
+        }
         CompletionContextKind::MemberAccess { bracket: true, quote, .. } => {
             if let Some(q) = quote {
                 let close_bracket = format!("{q}]]");
@@ -2488,6 +2715,67 @@ mod tests {
         let ts = tokenize("x <- r\"--(text # if\n still text)--\"\ny <- 'unfinished");
         assert!(ts.iter().any(|t| t.kind == TokenKind::String && t.text.starts_with("r\"")));
         assert!(ts.iter().any(|t| t.kind == TokenKind::String && t.text == "'unfinished"));
+    }
+    #[test]
+    fn argument_completion_tracks_context_prefix_used_names_and_nested_calls() {
+        let cases = [
+            ("plot(", "plot", "", Vec::<String>::new()),
+            ("read.csv(fi", "read.csv", "fi", Vec::<String>::new()),
+            ("stats::lm(", "stats::lm", "", Vec::<String>::new()),
+            ("my_function(\n data,\n method", "my_function", "method", Vec::<String>::new()),
+            ("plot(log(", "log", "", Vec::<String>::new()),
+            ("plot(x, main = 'Example', yl", "plot", "yl", vec!["main".to_owned()]),
+        ];
+        for (source, expected_function, expected_prefix, expected_used) in cases {
+            let context = completion_context_at(source, source.chars().count()).expect("argument completion context");
+            assert_eq!(context.prefix, expected_prefix, "{source}");
+            let CompletionContextKind::Argument { function_name, used_names, .. } = context.kind else {
+                panic!("expected function argument context for {source}");
+            };
+            assert_eq!(function_name, expected_function, "{source}");
+            assert_eq!(used_names, expected_used, "{source}");
+        }
+        let value_source = "plot(x = mt";
+        let value_context = completion_context_at(value_source, value_source.chars().count()).expect("value completion context");
+        assert_eq!(value_context.kind, CompletionContextKind::General);
+    }
+
+    #[test]
+    fn argument_completion_handles_unicode_positions_and_inserts_one_assignment() {
+        let mut source = "plot(\"한글\", ma".to_owned();
+        let cursor = source.chars().count();
+        let context = completion_context_at(&source, cursor).expect("argument context after Unicode value");
+        assert_eq!(context.prefix, "ma");
+        let candidate = CompletionCandidate {
+            name: "main".into(),
+            kind: CompletionCandidateKind::Argument,
+            signature: Some("\"\"".into()),
+            detail: "\"\"".into(),
+            source: "plot".into(),
+        };
+        let cursor = apply_completion(&mut source, &context, &candidate);
+        assert_eq!(source, "plot(\"한글\", main = ");
+        assert_eq!(cursor, source.chars().count());
+
+        let mut source = "plot(x, ma = 2)".to_owned();
+        let cursor = source.find("ma").unwrap_or_default();
+        let cursor_char = source.get(..cursor).map_or(0, |prefix| prefix.chars().count()) + 2;
+        let context = completion_context_at(&source, cursor_char).expect("argument context before existing equals");
+        apply_completion(&mut source, &context, &candidate);
+        assert_eq!(source, "plot(x, main = 2)");
+
+        let mut source = "my_function(".to_owned();
+        let context = completion_context_at(&source, source.chars().count()).expect("ellipsis argument context");
+        let dots = CompletionCandidate {
+            name: "...".into(),
+            kind: CompletionCandidateKind::Argument,
+            signature: None,
+            detail: String::new(),
+            source: "my_function".into(),
+        };
+        let cursor = apply_completion(&mut source, &context, &dots);
+        assert_eq!(source, "my_function(...");
+        assert_eq!(cursor, source.chars().count());
     }
     #[test]
     fn shift_tab_outdents_every_selected_line_and_keeps_a_valid_selection() {

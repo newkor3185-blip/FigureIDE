@@ -78,6 +78,7 @@ enum RMessage {
         source_revision: String,
         object_columns: Option<(String, Vec<(String, String)>)>,
         namespace_items: Option<((String, bool), Vec<crate::r_editor::CompletionCandidate>)>,
+        argument_items: Option<(String, Vec<crate::r_editor::CompletionCandidate>)>,
     },
     RDataInspected {
         path: String,
@@ -434,6 +435,7 @@ pub struct Workspace {
     pub(crate) editor_search: search::EditorSearch,
     pub(crate) completion_object_columns: HashMap<String, Vec<(String, String)>>,
     pub(crate) completion_namespace_cache: HashMap<(String, bool), Vec<crate::r_editor::CompletionCandidate>>,
+    pub(crate) completion_argument_cache: HashMap<String, Vec<crate::r_editor::CompletionCandidate>>,
     pub(crate) completion_request_in_flight: bool,
     pub(crate) working_directory: Option<std::path::PathBuf>,
     pub(crate) pending_rdata_import: Option<crate::r_session::RDataInspection>,
@@ -616,6 +618,7 @@ impl Workspace {
             editor_search: search::EditorSearch::default(),
             completion_object_columns: HashMap::new(),
             completion_namespace_cache: HashMap::new(),
+            completion_argument_cache: HashMap::new(),
             completion_request_in_flight: false,
             working_directory: std::env::current_dir().ok(),
             pending_rdata_import: None,
@@ -2682,6 +2685,7 @@ fn poll_messages(app: &mut crate::VectorcraftApp) {
             Ok(RMessage::Execution(Ok(execution), refresh_linked, definitions)) => {
                 app.scientific.running = false;
                 app.scientific.session_active = true;
+                app.scientific.completion_argument_cache.clear();
                 if !execution.plots.is_empty() {
                     app.scientific.plot_history.extend(execution.plots.iter().cloned());
                     while app.scientific.plot_history.len() > 10
@@ -2820,6 +2824,7 @@ fn poll_messages(app: &mut crate::VectorcraftApp) {
             Ok(RMessage::EnvironmentAction(Ok(execution))) => {
                 app.scientific.running = false;
                 app.scientific.session_active = true;
+                app.scientific.completion_argument_cache.clear();
                 if let Some(wd) = execution.working_directory {
                     app.scientific.working_directory = Some(wd);
                 }
@@ -2862,7 +2867,7 @@ fn poll_messages(app: &mut crate::VectorcraftApp) {
                 app.scientific.running = false;
                 app.scientific.r_status = format!("R package query failed: {error}");
             }
-            Ok(RMessage::CompletionMetadata { script_id, source_revision, object_columns, namespace_items }) => {
+            Ok(RMessage::CompletionMetadata { script_id, source_revision, object_columns, namespace_items, argument_items }) => {
                 app.scientific.completion_request_in_flight = false;
                 if let Some((obj, cols)) = object_columns {
                     app.scientific.completion_object_columns.insert(obj, cols);
@@ -2870,16 +2875,21 @@ fn poll_messages(app: &mut crate::VectorcraftApp) {
                 if let Some((ns_key, items)) = namespace_items {
                     app.scientific.completion_namespace_cache.insert(ns_key, items);
                 }
+                if let Some((function_name, items)) = argument_items {
+                    app.scientific.completion_argument_cache.insert(function_name, items);
+                }
                 let maybe_active_context = app.scientific.completion.as_ref().and_then(|active| {
                     if active.script_id == script_id && active.source_revision == source_revision { Some(active.context.clone()) } else { None }
                 });
                 if let Some(context) = maybe_active_context {
                     let candidates = source_editor::build_completion_candidates(&app.scientific, script_id, &source_revision, &context);
-                    if let Some(active) = app.scientific.completion.as_mut()
-                        && !candidates.is_empty()
-                    {
-                        active.candidates = candidates;
-                        active.selected = active.selected.min(active.candidates.len().saturating_sub(1));
+                    if !candidates.is_empty() {
+                        if let Some(active) = app.scientific.completion.as_mut() {
+                            active.candidates = candidates;
+                            active.selected = active.selected.min(active.candidates.len().saturating_sub(1));
+                        }
+                    } else {
+                        app.scientific.completion = None;
                     }
                 }
             }
@@ -2908,6 +2918,7 @@ fn poll_messages(app: &mut crate::VectorcraftApp) {
             },
             Ok(RMessage::RDataImported { path, result }) => {
                 app.scientific.running = false;
+                app.scientific.completion_argument_cache.clear();
                 match result {
                     Ok((execution, imported_count, skipped_count)) => {
                         app.scientific.session_active = true;

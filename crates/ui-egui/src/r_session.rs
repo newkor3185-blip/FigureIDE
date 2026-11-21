@@ -532,6 +532,69 @@ repeat {
           }, character(1L))
           cat(paste(entries, collapse = "\n"))
         }
+      } else if (meta_kind == "ARGS" && length(parts) >= 3L) {
+        function_name <- decode_hex(parts[[2L]])
+        dispatch_symbol <- if (identical(parts[[3L]], "-")) "" else decode_hex(parts[[3L]])
+        target_function <- NULL
+        namespace_match <- regmatches(function_name, regexec("^(.+)(:::|::)([^:]+)$", function_name))[[1L]]
+        if (length(namespace_match) == 4L) {
+          package_name <- namespace_match[[2L]]
+          symbol_name <- namespace_match[[4L]]
+          if (requireNamespace(package_name, quietly = TRUE)) {
+            namespace <- asNamespace(package_name)
+            if (exists(symbol_name, envir = namespace, inherits = FALSE) && !bindingIsActive(symbol_name, namespace)) {
+              candidate <- tryCatch(get(symbol_name, envir = namespace, inherits = FALSE), error = function(condition) NULL)
+              if (is.function(candidate)) target_function <- candidate
+            }
+          }
+        } else if (grepl("^[[:alpha:]_.][[:alnum:]_.]*$", function_name)) {
+          for (environment_name in find(function_name)) {
+            environment <- as.environment(environment_name)
+            if (exists(function_name, envir = environment, inherits = FALSE) && !bindingIsActive(function_name, environment)) {
+              candidate <- tryCatch(get(function_name, envir = environment, inherits = FALSE), error = function(condition) NULL)
+              if (is.function(candidate)) { target_function <- candidate; break }
+            }
+          }
+        }
+        if (!is.null(target_function)) {
+          is_s3_generic <- tryCatch(is.function(target_function) && grepl("UseMethod", paste(deparse(body(target_function)), collapse = ""), fixed = TRUE), error = function(condition) FALSE)
+          if (is_s3_generic) {
+            generic_name <- if (length(namespace_match) == 4L) namespace_match[[4L]] else function_name
+            classes <- "default"
+            if (grepl("^[[:alpha:]_.][[:alnum:]_.]*$", dispatch_symbol)) {
+              for (environment_name in find(dispatch_symbol)) {
+                environment <- as.environment(environment_name)
+                if (exists(dispatch_symbol, envir = environment, inherits = FALSE) && !bindingIsActive(dispatch_symbol, environment)) {
+                  object <- tryCatch(get(dispatch_symbol, envir = environment, inherits = FALSE), error = function(condition) NULL)
+                  if (!is.null(object)) classes <- c(class(object), "default")
+                  break
+                }
+              }
+            }
+            for (class_name in unique(classes)) {
+              method <- tryCatch(utils::getS3method(generic_name, class_name, optional = TRUE), error = function(condition) NULL)
+              if (is.function(method)) { target_function <- method; break }
+            }
+          }
+          formal_values <- tryCatch(formals(target_function), error = function(condition) NULL)
+          if (is.null(formal_values)) {
+            signature <- tryCatch(args(target_function), error = function(condition) NULL)
+            if (is.function(signature)) formal_values <- formals(signature)
+          }
+          if (!is.null(formal_values)) {
+            formal_names <- names(formal_values)
+            entries <- head(seq_along(formal_values), 200L)
+            encoded <- vapply(entries, function(index) {
+              argument_name <- formal_names[[index]]
+              default_text <- if (identical(argument_name, "...")) "additional arguments"
+                else if (identical(unname(formal_values[index]), unname(alist(x = )))) ""
+                else paste(deparse(formal_values[[index]], width.cutoff = 80L), collapse = " ")
+              default_text <- substr(default_text, 1L, 200L)
+              paste(encode_hex(argument_name), encode_hex(default_text), sep = "\t")
+            }, character(1L))
+            cat(paste(encoded, collapse = "\n"))
+          }
+        }
       } else if (meta_kind == "GETWD") {
         cat(encode_hex(enc2utf8(getwd())))
       }
@@ -1269,7 +1332,7 @@ fn parse_response(line: &str, request_id: u64) -> Option<Response> {
     })
 }
 
-fn encode_hex(bytes: &[u8]) -> String {
+pub(crate) fn encode_hex(bytes: &[u8]) -> String {
     use std::fmt::Write as _;
     let mut encoded = String::with_capacity(bytes.len().saturating_mul(2));
     for byte in bytes {
@@ -1658,6 +1721,46 @@ mod tests {
             .unwrap_or_else(|error| panic!("explicit ggplot print failed: {error}"));
         assert!(explicit.error.is_none(), "{:?}", explicit.error);
         assert_eq!(explicit.plots.len(), 1, "print(figure) captures an explicit plot");
+    }
+
+    #[test]
+    fn r_argument_metadata_resolves_base_namespaced_user_and_s3_formals() {
+        if find_rscript().is_err() {
+            return;
+        }
+        let mut session = RSession::default();
+        let defined = session.execute("my_function <- function(data, method = 'mean', na_rm = TRUE) NULL").unwrap();
+        assert!(defined.error.is_none(), "{:?}", defined.error);
+        let mut query = |function_name: &str, dispatch: &str| {
+            let dispatch = if dispatch.is_empty() { "-".to_owned() } else { encode_hex(dispatch.as_bytes()) };
+            let payload = format!("ARGS\t{}\t{dispatch}", encode_hex(function_name.as_bytes()));
+            session
+                .completion_metadata(&payload)
+                .unwrap_or_else(|error| panic!("argument metadata lookup failed for {function_name}: {error}"))
+                .lines()
+                .filter_map(|line| {
+                    let mut fields = line.split('\t');
+                    let (Some(name), Some(default)) = (fields.next(), fields.next()) else {
+                        return None;
+                    };
+                    Some((decode_hex(name)?, decode_hex(default)?))
+                })
+                .collect::<Vec<_>>()
+        };
+        let user = query("my_function", "");
+        assert!(user.contains(&("data".into(), String::new())), "{user:?}");
+        assert!(user.contains(&("method".into(), "\"mean\"".into())));
+        assert!(user.contains(&("na_rm".into(), "TRUE".into())));
+        let namespaced = query("stats::lm", "");
+        assert!(namespaced.iter().any(|(name, _)| name == "formula"));
+        let csv = query("utils::read.csv", "");
+        assert!(csv.iter().any(|(name, _)| name == "file"));
+        let plot = query("plot", "");
+        assert!(plot.iter().any(|(name, _)| name == "type"));
+        assert!(plot.iter().any(|(name, default)| name == "..." && default == "additional arguments"));
+        let dispatched = query("plot", "mtcars");
+        assert!(!dispatched.is_empty());
+        assert!(session.stop().is_ok());
     }
 
     #[test]
@@ -2126,8 +2229,8 @@ mod tests {
         assert!(setup.error.is_none(), "{:?}", setup.error);
         let error = session.render_plot_svg_at_size("broken_plot", 100.0, 80.0).unwrap_err();
         assert!(error.contains("intentional render failure"), "{error}");
-        let devices = session.execute("grDevices::dev.list()").unwrap();
-        assert_eq!(devices.output.trim(), "NULL", "failed plot render leaked a graphics device");
+        let devices = session.execute("length(grDevices::dev.list())").unwrap();
+        assert_eq!(devices.output.trim(), "[1] 1", "failed plot render leaked an extra graphics device");
         let _ = session.execute("rm(print.ggplot)");
         assert!(session.stop().is_ok());
     }
