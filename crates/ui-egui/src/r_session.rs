@@ -77,7 +77,7 @@ describe_object <- function(name, object, classes, dimensions) {
   description <- gsub("[\r\n\t]", " ", description)
   list(category = category, description = substr(description, 1L, 180L))
 }
-evaluate_source <- function(source, output_path) {
+evaluate_source <- function(source, output_path, plot_prefix) {
   # Parse the complete submission before evaluating anything. Runtime errors still preserve
   # earlier expressions, matching R's sequential evaluation in the shared global environment.
   expressions <- parse(text = source, keep.source = TRUE)
@@ -92,8 +92,13 @@ evaluate_source <- function(source, output_path) {
     }
     try(close(output_connection), silent = TRUE)
   }, add = TRUE)
-  for (expression in expressions) {
-    withCallingHandlers(
+  plot_files <- character()
+  for (index in seq_along(expressions)) {
+    expression <- expressions[[index]]
+    plot_path <- paste0(plot_prefix, "-", index, ".svg")
+    device_id <- NA_integer_
+    device_open <- tryCatch({ grDevices::svg(filename = plot_path, width = 8, height = 6); device_id <- grDevices::dev.cur(); TRUE }, error = function(condition) FALSE)
+    tryCatch(withCallingHandlers(
       {
         evaluated <- withVisible(base::eval(expression, envir = .GlobalEnv))
         if (isTRUE(evaluated$visible)) base::print(evaluated$value)
@@ -115,9 +120,22 @@ evaluate_source <- function(source, output_path) {
         flush(output_connection)
         invokeRestart("muffleMessage")
       }
-    )
+    ), error = function(condition) {
+      captured_error <<- conditionMessage(condition)
+    }, finally = {
+      if (device_open) try(grDevices::dev.off(which = device_id), silent = TRUE)
+    })
     flush(output_connection)
+    if (nzchar(captured_error)) {
+      unlink(plot_path)
+      break
+    }
+    if (file.exists(plot_path) && is.finite(file.info(plot_path)$size) && file.info(plot_path)$size <= 16 * 1024 * 1024) {
+      svg_text <- paste(readLines(plot_path, warn = FALSE), collapse = "\n")
+      if (grepl("<(path|text|rect|line|polyline|polygon|circle|ellipse)[ >]", svg_text, perl = TRUE) && length(plot_files) < 100L) plot_files <- c(plot_files, basename(plot_path)) else unlink(plot_path)
+    }
   }
+  plot_files
 }
 args <- commandArgs(trailingOnly = TRUE)
 request_path <- args[[1L]]
@@ -140,11 +158,12 @@ repeat {
   captured_messages <- character()
   captured_error <- ""
   execution_mode <- mode %in% c("EXEC", "EXEC_STREAM")
+  captured_plot_files <- character()
   stream_path <- file.path(dirname(response_path), "console.log")
   if (execution_mode) unlink(stream_path)
   captured_output <- if (execution_mode) {
     tryCatch({
-      evaluate_source(payload, stream_path)
+      captured_plot_files <- evaluate_source(payload, stream_path, file.path(dirname(response_path), paste0("plot-", request_id)))
       character()
     }, error = function(condition) {
       captured_error <<- conditionMessage(condition)
@@ -513,6 +532,69 @@ repeat {
           }, character(1L))
           cat(paste(entries, collapse = "\n"))
         }
+      } else if (meta_kind == "ARGS" && length(parts) >= 3L) {
+        function_name <- decode_hex(parts[[2L]])
+        dispatch_symbol <- if (identical(parts[[3L]], "-")) "" else decode_hex(parts[[3L]])
+        target_function <- NULL
+        namespace_match <- regmatches(function_name, regexec("^(.+)(:::|::)([^:]+)$", function_name))[[1L]]
+        if (length(namespace_match) == 4L) {
+          package_name <- namespace_match[[2L]]
+          symbol_name <- namespace_match[[4L]]
+          if (requireNamespace(package_name, quietly = TRUE)) {
+            namespace <- asNamespace(package_name)
+            if (exists(symbol_name, envir = namespace, inherits = FALSE) && !bindingIsActive(symbol_name, namespace)) {
+              candidate <- tryCatch(get(symbol_name, envir = namespace, inherits = FALSE), error = function(condition) NULL)
+              if (is.function(candidate)) target_function <- candidate
+            }
+          }
+        } else if (grepl("^[[:alpha:]_.][[:alnum:]_.]*$", function_name)) {
+          for (environment_name in find(function_name)) {
+            environment <- as.environment(environment_name)
+            if (exists(function_name, envir = environment, inherits = FALSE) && !bindingIsActive(function_name, environment)) {
+              candidate <- tryCatch(get(function_name, envir = environment, inherits = FALSE), error = function(condition) NULL)
+              if (is.function(candidate)) { target_function <- candidate; break }
+            }
+          }
+        }
+        if (!is.null(target_function)) {
+          is_s3_generic <- tryCatch(is.function(target_function) && grepl("UseMethod", paste(deparse(body(target_function)), collapse = ""), fixed = TRUE), error = function(condition) FALSE)
+          if (is_s3_generic) {
+            generic_name <- if (length(namespace_match) == 4L) namespace_match[[4L]] else function_name
+            classes <- "default"
+            if (grepl("^[[:alpha:]_.][[:alnum:]_.]*$", dispatch_symbol)) {
+              for (environment_name in find(dispatch_symbol)) {
+                environment <- as.environment(environment_name)
+                if (exists(dispatch_symbol, envir = environment, inherits = FALSE) && !bindingIsActive(dispatch_symbol, environment)) {
+                  object <- tryCatch(get(dispatch_symbol, envir = environment, inherits = FALSE), error = function(condition) NULL)
+                  if (!is.null(object)) classes <- c(class(object), "default")
+                  break
+                }
+              }
+            }
+            for (class_name in unique(classes)) {
+              method <- tryCatch(utils::getS3method(generic_name, class_name, optional = TRUE), error = function(condition) NULL)
+              if (is.function(method)) { target_function <- method; break }
+            }
+          }
+          formal_values <- tryCatch(formals(target_function), error = function(condition) NULL)
+          if (is.null(formal_values)) {
+            signature <- tryCatch(args(target_function), error = function(condition) NULL)
+            if (is.function(signature)) formal_values <- formals(signature)
+          }
+          if (!is.null(formal_values)) {
+            formal_names <- names(formal_values)
+            entries <- head(seq_along(formal_values), 200L)
+            encoded <- vapply(entries, function(index) {
+              argument_name <- formal_names[[index]]
+              default_text <- if (identical(argument_name, "...")) "additional arguments"
+                else if (identical(unname(formal_values[index]), unname(alist(x = )))) ""
+                else paste(deparse(formal_values[[index]], width.cutoff = 80L), collapse = " ")
+              default_text <- substr(default_text, 1L, 200L)
+              paste(encode_hex(argument_name), encode_hex(default_text), sep = "\t")
+            }, character(1L))
+            cat(paste(encoded, collapse = "\n"))
+          }
+        }
       } else if (meta_kind == "GETWD") {
         cat(encode_hex(enc2utf8(getwd())))
       }
@@ -603,7 +685,7 @@ repeat {
   }, character(1L)), collapse = "\n")
   response <- paste("VCSTUDIO", request_id, status, encode_hex(output_text),
                     encode_hex(warning_text), encode_hex(captured_error), encode_hex(object_metadata),
-                    encode_hex(enc2utf8(getwd())), sep = "\t")
+                    encode_hex(enc2utf8(getwd())), encode_hex(paste(captured_plot_files, collapse = "\n")), sep = "\t")
   response_tmp <- paste0(response_path, ".tmp")
   writeLines(response, response_tmp, useBytes = TRUE)
   file.rename(response_tmp, response_path)
@@ -656,6 +738,7 @@ pub(crate) struct Execution {
     pub(crate) objects: Vec<RObject>,
     pub(crate) error: Option<String>,
     pub(crate) working_directory: Option<std::path::PathBuf>,
+    pub(crate) plots: Vec<String>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -1040,11 +1123,39 @@ impl RSession {
                         text.push_str(&response.warnings.replace('\n', "\nWarning: "));
                         text.push('\n');
                     }
+                    let mut plot_bytes = 0_u64;
+                    let plots = if execution_mode {
+                        response
+                            .plot_files
+                            .iter()
+                            .filter_map(|name| {
+                                let path = std::path::Path::new(name);
+                                if path.file_name().and_then(std::ffi::OsStr::to_str) != Some(name.as_str())
+                                    || !name.starts_with(&format!("plot-{request_id}-"))
+                                {
+                                    return None;
+                                }
+                                let full_path = process.request_path.parent()?.join(name);
+                                let metadata = std::fs::metadata(&full_path).ok()?;
+                                if metadata.len() > 4 * 1024 * 1024 || plot_bytes.saturating_add(metadata.len()) > 32 * 1024 * 1024 {
+                                    let _ = std::fs::remove_file(&full_path);
+                                    return None;
+                                }
+                                let svg = std::fs::read_to_string(&full_path).ok();
+                                let _ = std::fs::remove_file(&full_path);
+                                plot_bytes = plot_bytes.saturating_add(metadata.len());
+                                svg.filter(|svg| svg.contains("<svg") && svg.len() <= 16 * 1024 * 1024)
+                            })
+                            .collect()
+                    } else {
+                        Vec::new()
+                    };
                     return Ok(Execution {
                         output: text,
                         objects: response.objects,
                         error: (!response.error.is_empty()).then_some(response.error),
                         working_directory: response.working_directory,
+                        plots,
                     });
                 }
             }
@@ -1183,6 +1294,7 @@ struct Response {
     error: String,
     objects: Vec<RObject>,
     working_directory: Option<std::path::PathBuf>,
+    plot_files: Vec<String>,
 }
 
 fn parse_response(line: &str, request_id: u64) -> Option<Response> {
@@ -1216,10 +1328,11 @@ fn parse_response(line: &str, request_id: u64) -> Option<Response> {
         error: if fields.get(2).copied()? == "ERROR" { decode_hex(fields.get(5).copied()?)? } else { String::new() },
         objects,
         working_directory,
+        plot_files: fields.get(8).and_then(|field| decode_hex(field)).unwrap_or_default().lines().map(str::to_owned).collect(),
     })
 }
 
-fn encode_hex(bytes: &[u8]) -> String {
+pub(crate) fn encode_hex(bytes: &[u8]) -> String {
     use std::fmt::Write as _;
     let mut encoded = String::with_capacity(bytes.len().saturating_mul(2));
     for byte in bytes {
@@ -1364,7 +1477,7 @@ pub(crate) fn find_rscript_with(lookup_env: impl Fn(&str) -> Option<std::path::P
 
 #[cfg(test)]
 mod tests {
-    use super::{RSession, decode_hex, encode_hex};
+    use super::{RSession, decode_hex, encode_hex, find_rscript};
     use crate::scientific::graph_style::{FontFace, GraphStyle, LegendDirection, LegendPosition, TextDetails};
 
     #[test]
@@ -1582,6 +1695,71 @@ mod tests {
         assert!(!removed.objects.iter().any(|object| object.variable == "x"));
         let cleared = session.clear_environment().unwrap();
         assert!(cleared.objects.is_empty());
+        assert!(session.stop().is_ok());
+    }
+
+    #[test]
+    fn execution_captures_graphics_but_not_printed_text() {
+        if find_rscript().is_err() {
+            return;
+        }
+        let mut session = RSession::default();
+        let plot = session.execute("plot(1:10)").unwrap_or_else(|error| panic!("R plot failed: {error}"));
+        assert!(plot.error.is_none(), "{:?}", plot.error);
+        assert_eq!(plot.plots.len(), 1);
+        assert!(plot.plots[0].contains("<svg"));
+        let text = session.execute("print('hello')").unwrap_or_else(|error| panic!("R print failed: {error}"));
+        assert!(text.output.contains("hello"));
+        assert!(text.plots.is_empty());
+        let automatic = session
+            .execute("ggplot2::ggplot(iris, ggplot2::aes(Sepal.Length, Petal.Length)) + ggplot2::geom_point()")
+            .unwrap_or_else(|error| panic!("ggplot expression failed: {error}"));
+        assert!(automatic.error.is_none(), "{:?}", automatic.error);
+        assert_eq!(automatic.plots.len(), 1, "a visible ggplot expression is auto-printed");
+        let explicit = session
+            .execute("figure <- ggplot2::ggplot(iris, ggplot2::aes(Sepal.Length, Petal.Length)) + ggplot2::geom_point(); print(figure)")
+            .unwrap_or_else(|error| panic!("explicit ggplot print failed: {error}"));
+        assert!(explicit.error.is_none(), "{:?}", explicit.error);
+        assert_eq!(explicit.plots.len(), 1, "print(figure) captures an explicit plot");
+    }
+
+    #[test]
+    fn r_argument_metadata_resolves_base_namespaced_user_and_s3_formals() {
+        if find_rscript().is_err() {
+            return;
+        }
+        let mut session = RSession::default();
+        let defined = session.execute("my_function <- function(data, method = 'mean', na_rm = TRUE) NULL").unwrap();
+        assert!(defined.error.is_none(), "{:?}", defined.error);
+        let mut query = |function_name: &str, dispatch: &str| {
+            let dispatch = if dispatch.is_empty() { "-".to_owned() } else { encode_hex(dispatch.as_bytes()) };
+            let payload = format!("ARGS\t{}\t{dispatch}", encode_hex(function_name.as_bytes()));
+            session
+                .completion_metadata(&payload)
+                .unwrap_or_else(|error| panic!("argument metadata lookup failed for {function_name}: {error}"))
+                .lines()
+                .filter_map(|line| {
+                    let mut fields = line.split('\t');
+                    let (Some(name), Some(default)) = (fields.next(), fields.next()) else {
+                        return None;
+                    };
+                    Some((decode_hex(name)?, decode_hex(default)?))
+                })
+                .collect::<Vec<_>>()
+        };
+        let user = query("my_function", "");
+        assert!(user.contains(&("data".into(), String::new())), "{user:?}");
+        assert!(user.contains(&("method".into(), "\"mean\"".into())));
+        assert!(user.contains(&("na_rm".into(), "TRUE".into())));
+        let namespaced = query("stats::lm", "");
+        assert!(namespaced.iter().any(|(name, _)| name == "formula"));
+        let csv = query("utils::read.csv", "");
+        assert!(csv.iter().any(|(name, _)| name == "file"));
+        let plot = query("plot", "");
+        assert!(plot.iter().any(|(name, _)| name == "type"));
+        assert!(plot.iter().any(|(name, default)| name == "..." && default == "additional arguments"));
+        let dispatched = query("plot", "mtcars");
+        assert!(!dispatched.is_empty());
         assert!(session.stop().is_ok());
     }
 
@@ -2051,8 +2229,8 @@ mod tests {
         assert!(setup.error.is_none(), "{:?}", setup.error);
         let error = session.render_plot_svg_at_size("broken_plot", 100.0, 80.0).unwrap_err();
         assert!(error.contains("intentional render failure"), "{error}");
-        let devices = session.execute("grDevices::dev.list()").unwrap();
-        assert_eq!(devices.output.trim(), "NULL", "failed plot render leaked a graphics device");
+        let devices = session.execute("length(grDevices::dev.list())").unwrap();
+        assert_eq!(devices.output.trim(), "[1] 1", "failed plot render leaked an extra graphics device");
         let _ = session.execute("rm(print.ggplot)");
         assert!(session.stop().is_ok());
     }

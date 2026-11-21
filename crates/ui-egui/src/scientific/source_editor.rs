@@ -1,6 +1,8 @@
+#[cfg(not(target_arch = "wasm32"))]
+use super::RMessage;
 use super::{
-    ActiveCompletion, QueuedRCommand, R_CODE_LINE_GAP, R_CODE_PADDING, R_CODE_SIZE, RMessage, ScriptDocument, ScriptEncoding, Workspace,
-    decode_script_as, install_script_document, save_script_for,
+    ActiveCompletion, QueuedRCommand, R_CODE_LINE_GAP, R_CODE_PADDING, R_CODE_SIZE, ScriptDocument, ScriptEncoding, Workspace, decode_script_as,
+    install_script_document, save_script_for,
 };
 
 pub(super) fn code_style(ui: &mut egui::Ui) {
@@ -10,6 +12,7 @@ pub(super) fn code_style(ui: &mut egui::Ui) {
 
 pub(super) fn show_source_editor(workspace: &mut Workspace, ui: &mut egui::Ui, height: f32) {
     let active_id = workspace.active_script_id;
+    show_search_bar(workspace, ui, active_id);
     let mut popup_anchor = None;
     let mut editor_widget_id = None;
     let response = ui
@@ -352,16 +355,17 @@ pub(super) fn show_source_editor(workspace: &mut Workspace, ui: &mut egui::Ui, h
                                         };
                                         if let Some(ctx) = crate::r_editor::completion_context_at(&text_copy, cursor_idx) {
                                             let candidates = build_completion_candidates(workspace, active_id, &text_copy, &ctx);
-                                            if !candidates.is_empty() {
-                                                request_completion_metadata(workspace, active_id, text_copy.clone(), &ctx);
+                                            let is_argument_context = matches!(ctx.kind, crate::r_editor::CompletionContextKind::Argument { .. });
+                                            if !candidates.is_empty() || is_argument_context {
                                                 workspace.completion = Some(ActiveCompletion {
                                                     script_id: active_id,
-                                                    source_revision: text_copy,
-                                                    context: ctx,
+                                                    source_revision: text_copy.clone(),
+                                                    context: ctx.clone(),
                                                     candidates,
                                                     selected: 0,
                                                     scroll_to_selected: true,
                                                 });
+                                                request_completion_metadata(workspace, active_id, text_copy, &ctx);
                                             } else {
                                                 insert_indentation_spaces(ui.ctx(), editor_id, &mut workspace.scripts[script_idx].text, cursor_idx);
                                             }
@@ -420,7 +424,15 @@ pub(super) fn show_source_editor(workspace: &mut Workspace, ui: &mut egui::Ui, h
                                             let script = &mut script_doc.text;
                                             let cache = &mut script_doc.highlight_cache;
                                             let mut layouter = |ui: &egui::Ui, text: &dyn egui::TextBuffer, _: f32| {
-                                                let job = crate::r_editor::layout_job(ui, text.as_str(), f32::INFINITY, cache);
+                                                let mut job = crate::r_editor::layout_job(ui, text.as_str(), f32::INFINITY, cache);
+                                                let matches = super::search::matches(text.as_str(), &workspace.editor_search).unwrap_or_default();
+                                                super::search::highlight_layout_job(
+                                                    &mut job,
+                                                    &matches,
+                                                    Some(workspace.editor_search.current_match),
+                                                    egui::Color32::from_rgb(120, 95, 20),
+                                                    egui::Color32::from_rgb(170, 85, 20),
+                                                );
                                                 ui.fonts_mut(|fonts| fonts.layout_job(job))
                                             };
                                             let output = egui::TextEdit::multiline(script)
@@ -591,6 +603,116 @@ pub(super) fn show_source_editor(workspace: &mut Workspace, ui: &mut egui::Ui, h
     }
 }
 
+fn show_search_bar(workspace: &mut Workspace, ui: &mut egui::Ui, active_id: u64) {
+    if workspace.editor_search.document_id != Some(active_id) {
+        workspace.editor_search.document_id = Some(active_id);
+        workspace.editor_search.current_match = 0;
+    }
+    if !workspace.editor_search.open {
+        return;
+    }
+    let Some(script_idx) = workspace.scripts.iter().position(|script| script.id == active_id) else { return };
+    let editor_id = ui.make_persistent_id("scientific-r-script-editor").with(active_id);
+    let bar = ui.horizontal_wrapped(|ui| {
+        let query_id = ui.make_persistent_id(("r-source-search-query", active_id));
+        let query = ui.add(egui::TextEdit::singleline(&mut workspace.editor_search.query).id(query_id).hint_text("Find"));
+        if workspace.editor_search.focus_query {
+            query.request_focus();
+            workspace.editor_search.focus_query = false;
+        }
+        ui.checkbox(&mut workspace.editor_search.case_sensitive, "Aa").on_hover_text("Match case");
+        ui.checkbox(&mut workspace.editor_search.whole_word, "Word");
+        ui.checkbox(&mut workspace.editor_search.regular_expression, ".*").on_hover_text("Regular expression");
+        let source = &workspace.scripts[script_idx].text;
+        let ranges = super::search::matches(source, &workspace.editor_search).unwrap_or_default();
+        if !ranges.is_empty() {
+            workspace.editor_search.current_match %= ranges.len();
+        } else {
+            workspace.editor_search.current_match = 0;
+        }
+        if ui.small_button("↑").clicked() && !ranges.is_empty() {
+            workspace.editor_search.current_match = (workspace.editor_search.current_match + ranges.len() - 1) % ranges.len();
+        }
+        if ui.small_button("↓").clicked() && !ranges.is_empty() {
+            workspace.editor_search.current_match = (workspace.editor_search.current_match + 1) % ranges.len();
+        }
+        ui.label(if ranges.is_empty() { "0/0".to_owned() } else { format!("{}/{}", workspace.editor_search.current_match + 1, ranges.len()) });
+        if workspace.editor_search.replace_open {
+            ui.add(egui::TextEdit::singleline(&mut workspace.editor_search.replacement).hint_text("Replace"));
+            if ui.small_button("Replace").clicked()
+                && let Some(range) = ranges.get(workspace.editor_search.current_match).cloned()
+            {
+                let text = &mut workspace.scripts[script_idx].text;
+                let before = egui::TextEdit::load_state(ui.ctx(), editor_id).unwrap_or_default().cursor.char_range();
+                let mut state = egui::TextEdit::load_state(ui.ctx(), editor_id).unwrap_or_default();
+                let mut undoer = state.undoer();
+                if let Some(before) = before {
+                    undoer.add_undo(&(before, text.clone()));
+                }
+                let cursor = range.start;
+                if super::search::replace_current(text, range, &workspace.editor_search).is_ok() {
+                    let after = egui::text::CCursorRange::one(egui::text::CCursor::new(text[..cursor.min(text.len())].chars().count()));
+                    undoer.add_undo(&(after, text.clone()));
+                    state.set_undoer(undoer);
+                    state.cursor.set_char_range(Some(after));
+                    state.store(ui.ctx(), editor_id);
+                }
+            }
+            if ui.small_button("Replace all").clicked() {
+                let text = &mut workspace.scripts[script_idx].text;
+                let mut state = egui::TextEdit::load_state(ui.ctx(), editor_id).unwrap_or_default();
+                let before = state.cursor.char_range().unwrap_or_else(|| egui::text::CCursorRange::one(egui::text::CCursor::new(0)));
+                let mut undoer = state.undoer();
+                undoer.add_undo(&(before, text.clone()));
+                if super::search::replace_all(text, &workspace.editor_search).unwrap_or(0) > 0 {
+                    let after = egui::text::CCursorRange::one(egui::text::CCursor::new(text.chars().count()));
+                    undoer.add_undo(&(after, text.clone()));
+                    state.set_undoer(undoer);
+                    state.cursor.set_char_range(Some(after));
+                    state.store(ui.ctx(), editor_id);
+                }
+            }
+        }
+        if ui.small_button(if workspace.editor_search.replace_open { "Hide replace" } else { "Replace" }).clicked() {
+            workspace.editor_search.replace_open = !workspace.editor_search.replace_open;
+        }
+        if ui.small_button("×").clicked() {
+            workspace.editor_search.open = false;
+            ui.memory_mut(|memory| memory.request_focus(editor_id));
+        }
+        ranges.get(workspace.editor_search.current_match).cloned()
+    });
+    let (escape, next, previous) = ui.input_mut(|input| {
+        (
+            input.consume_key(egui::Modifiers::NONE, egui::Key::Escape),
+            input.consume_key(egui::Modifiers::NONE, egui::Key::Enter),
+            input.consume_key(egui::Modifiers::SHIFT, egui::Key::Enter),
+        )
+    });
+    if escape {
+        workspace.editor_search.open = false;
+        ui.memory_mut(|memory| memory.request_focus(editor_id));
+    }
+    let ranges = super::search::matches(&workspace.scripts[script_idx].text, &workspace.editor_search).unwrap_or_default();
+    if !ranges.is_empty() {
+        if next {
+            workspace.editor_search.current_match = (workspace.editor_search.current_match + 1) % ranges.len();
+        }
+        if previous {
+            workspace.editor_search.current_match = workspace.editor_search.current_match.checked_sub(1).unwrap_or(ranges.len() - 1);
+        }
+    }
+    if let Some(range) = ranges.get(workspace.editor_search.current_match).cloned() {
+        let source = &workspace.scripts[script_idx].text;
+        let start = source.get(..range.start).map_or(0, |prefix| prefix.chars().count());
+        let end = source.get(..range.end).map_or(start, |prefix| prefix.chars().count());
+        let mut state = egui::TextEdit::load_state(ui.ctx(), editor_id).unwrap_or_default();
+        state.cursor.set_char_range(Some(egui::text::CCursorRange::two(egui::text::CCursor::new(start), egui::text::CCursor::new(end))));
+        state.store(ui.ctx(), editor_id);
+    }
+    let _ = bar.response;
+}
+
 fn insert_indentation_spaces(ctx: &egui::Context, editor_id: egui::Id, text: &mut String, cursor_idx: usize) {
     let mut state = egui::TextEdit::load_state(ctx, editor_id).unwrap_or_default();
     let before = egui::text::CCursorRange::one(egui::text::CCursor::new(cursor_idx));
@@ -623,6 +745,14 @@ pub(crate) fn build_completion_candidates(
             }
             crate::r_editor::rank_and_filter_candidates(&list, &ctx.prefix)
         }
+        crate::r_editor::CompletionContextKind::Argument { function_name, used_names, .. } => workspace
+            .completion_argument_cache
+            .get(function_name)
+            .into_iter()
+            .flatten()
+            .filter(|candidate| candidate.name.starts_with(&ctx.prefix) && !used_names.iter().any(|name| name == &candidate.name))
+            .cloned()
+            .collect(),
         crate::r_editor::CompletionContextKind::MemberAccess { object, .. } => {
             let mut list = Vec::new();
             if let Some(cols) = workspace.completion_object_columns.get(object) {
@@ -761,6 +891,7 @@ pub(crate) fn request_completion_metadata(
                             source_revision,
                             object_columns: Some((obj, cols)),
                             namespace_items: None,
+                            argument_items: None,
                         });
                         if let Some(ctx) = ctx_repaint {
                             ctx.request_repaint();
@@ -816,6 +947,60 @@ pub(crate) fn request_completion_metadata(
                             source_revision,
                             object_columns: None,
                             namespace_items: Some(((pkg, is_internal), items)),
+                            argument_items: None,
+                        });
+                        if let Some(ctx) = ctx_repaint {
+                            ctx.request_repaint();
+                        }
+                    })
+                    .is_err()
+                {
+                    workspace.completion_request_in_flight = false;
+                }
+            }
+            crate::r_editor::CompletionContextKind::Argument { function_name, dispatch_symbol, .. } => {
+                if workspace.completion_argument_cache.contains_key(function_name) {
+                    return;
+                }
+                workspace.completion_request_in_flight = true;
+                let session = workspace.session.clone();
+                let tx = workspace._tx.clone();
+                let ctx_repaint = workspace.repaint_ctx.clone();
+                let function_name = function_name.clone();
+                let dispatch_symbol = dispatch_symbol.clone().unwrap_or_default();
+                if std::thread::Builder::new()
+                    .name("r-argument-completion".into())
+                    .spawn(move || {
+                        let payload = format!(
+                            "ARGS\t{}\t{}",
+                            crate::r_session::encode_hex(function_name.as_bytes()),
+                            if dispatch_symbol.is_empty() { "-".to_owned() } else { crate::r_session::encode_hex(dispatch_symbol.as_bytes()) }
+                        );
+                        let output = session.try_lock().ok().and_then(|mut session| session.completion_metadata(&payload).ok()).unwrap_or_default();
+                        let items = output
+                            .lines()
+                            .filter_map(|line| {
+                                let mut fields = line.split('\t');
+                                let (Some(name), Some(default)) = (fields.next(), fields.next()) else {
+                                    return None;
+                                };
+                                let name = crate::r_session::decode_hex(name)?;
+                                let default = crate::r_session::decode_hex(default)?;
+                                Some(crate::r_editor::CompletionCandidate {
+                                    kind: crate::r_editor::CompletionCandidateKind::Argument,
+                                    signature: (!default.is_empty() && name != "...").then_some(default.clone()),
+                                    detail: default,
+                                    source: function_name.clone(),
+                                    name,
+                                })
+                            })
+                            .collect();
+                        let _ = tx.send(RMessage::CompletionMetadata {
+                            script_id,
+                            source_revision,
+                            object_columns: None,
+                            namespace_items: None,
+                            argument_items: Some((function_name, items)),
                         });
                         if let Some(ctx) = ctx_repaint {
                             ctx.request_repaint();
@@ -1634,6 +1819,32 @@ pub(super) fn code_for_char_range(script: &str, start_char: usize, end_char: usi
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn argument_completion_filters_cached_formals_for_shared_call_context() {
+        let mut workspace = Workspace::default();
+        workspace.completion_argument_cache.insert(
+            "plot".into(),
+            ["x", "y", "main", "ylab", "..."]
+                .into_iter()
+                .map(|name| crate::r_editor::CompletionCandidate {
+                    name: name.into(),
+                    kind: crate::r_editor::CompletionCandidateKind::Argument,
+                    signature: None,
+                    detail: String::new(),
+                    source: "plot".into(),
+                })
+                .collect(),
+        );
+        let source = "plot(x, main = 'Example', yl";
+        let context = crate::r_editor::completion_context_at(source, source.chars().count()).unwrap();
+        let candidates = build_completion_candidates(&workspace, 1, source, &context);
+        assert_eq!(candidates.iter().map(|candidate| candidate.name.as_str()).collect::<Vec<_>>(), ["ylab"]);
+
+        let source = "stats::lm(";
+        let context = crate::r_editor::completion_context_at(source, source.chars().count()).unwrap();
+        assert!(build_completion_candidates(&workspace, 1, source, &context).is_empty());
+    }
 
     #[test]
     fn test_find_top_level_expressions_single_and_multiline() {

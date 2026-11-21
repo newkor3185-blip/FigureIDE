@@ -1,7 +1,7 @@
 use super::{
     BottomTab, RMessage, WorkspaceGeometry, append_console_output, detect_r, observe_selected_panel_resize, panel_caption, poll_messages,
     request_packages, restore_linked_panels, selected_linked_panel, show_close_script_prompt, show_console, show_environment, show_help,
-    show_history, show_packages, show_script_encoding_prompt, show_script_tabs, show_source_editor, status::show_status_indicator,
+    show_history, show_packages, show_plot_history, show_script_encoding_prompt, show_script_tabs, show_source_editor, status::show_status_indicator,
 };
 
 pub fn show(app: &mut crate::VectorcraftApp, ui: &mut egui::Ui) {
@@ -262,6 +262,7 @@ pub(super) fn show_bottom_tabs(app: &mut crate::VectorcraftApp, ui: &mut egui::U
     egui::ScrollArea::vertical().id_salt("scientific-r-lower-panes").max_height(ui.available_height()).auto_shrink([false, false]).show(ui, |ui| {
         match active {
             BottomTab::Console => show_console(app, ui),
+            BottomTab::Plots => show_plot_history(app, ui),
             #[cfg(test)]
             BottomTab::PlotRegistry | BottomTab::LinkedPanels => show_console(app, ui),
             BottomTab::Environment => show_environment(app, ui),

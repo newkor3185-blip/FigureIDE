@@ -1851,6 +1851,68 @@ fn r_source_editor_tab_completion_trigger_navigation_and_escape() {
 }
 
 #[test]
+fn r_argument_completion_is_shared_by_source_editor_and_console() {
+    let argument = crate::r_editor::CompletionCandidate {
+        name: "main".into(),
+        kind: crate::r_editor::CompletionCandidateKind::Argument,
+        signature: Some("\"\"".into()),
+        detail: "\"\"".into(),
+        source: "plot".into(),
+    };
+    let mut source = source_harness(560.0, 1.0);
+    source.state_mut().scientific.scripts[0].text = "plot(ma".into();
+    source.state_mut().scientific.completion_argument_cache.insert("plot".into(), vec![argument.clone()]);
+    source.run_steps(2);
+    let editor_id = focus_script_editor(&mut source, 1, 7);
+    source.key_press(egui::Key::Tab);
+    source.run_steps(2);
+    assert_eq!(
+        source.state().scientific.completion.as_ref().map(|active| active.candidates.iter().map(|item| item.name.as_str()).collect::<Vec<_>>()),
+        Some(vec!["main"])
+    );
+    source.key_press(egui::Key::Tab);
+    source.run_steps(2);
+    assert_eq!(source.state().scientific.scripts[0].text, "plot(main = ");
+    assert_eq!(source.ctx.memory(|memory| memory.focused()), Some(editor_id));
+
+    let mut console = harness(BottomTab::Console, 560.0, 1.0, 5, false);
+    console.state_mut().scientific.console_input = "plot(ma".into();
+    let second_argument = crate::r_editor::CompletionCandidate { name: "match.arg".into(), ..argument.clone() };
+    console.state_mut().scientific.completion_argument_cache.insert("plot".into(), vec![argument, second_argument]);
+    console.run_steps(2);
+    let console_id = console.state().scientific.console_input_id.expect("console input has a widget id");
+    console.get_by_role(Role::MultilineTextInput).focus();
+    console.run_steps(2);
+    let mut console_editor_state = egui::TextEdit::load_state(&console.ctx, console_id).unwrap_or_default();
+    console_editor_state.cursor.set_char_range(Some(egui::text::CCursorRange::one(egui::text::CCursor::new(7))));
+    console_editor_state.store(&console.ctx, console_id);
+    console.run_steps(2);
+    console.key_press(egui::Key::Tab);
+    console.run_steps(2);
+    assert_eq!(
+        console.state().scientific.completion.as_ref().map(|active| active.candidates.iter().map(|item| item.name.as_str()).collect::<Vec<_>>()),
+        Some(vec!["main", "match.arg"]),
+        "input={:?}, cursor={:?}, focused={:?}",
+        console.state().scientific.console_input,
+        egui::TextEdit::load_state(&console.ctx, console_id)
+            .and_then(|state| state.cursor.char_range())
+            .map(|range| usize::from(range.primary.index)),
+        console.ctx.memory(|memory| memory.focused())
+    );
+    console.event(egui::Event::Text("t".into()));
+    console.run_steps(2);
+    assert_eq!(console.state().scientific.console_input, "plot(mat");
+    assert_eq!(
+        console.state().scientific.completion.as_ref().map(|active| active.candidates.iter().map(|item| item.name.as_str()).collect::<Vec<_>>()),
+        Some(vec!["match.arg"])
+    );
+    console.key_press(egui::Key::Tab);
+    console.run_steps(2);
+    assert_eq!(console.state().scientific.console_input, "plot(match.arg = ");
+    assert_eq!(console.ctx.memory(|memory| memory.focused()), Some(console_id));
+}
+
+#[test]
 fn r_source_editor_tab_completion_function_acceptance_and_no_duplicate_parens() {
     let mut h = source_harness(560.0, 1.0);
     h.state_mut().scientific.scripts[0].text = "summ".into();
@@ -2029,6 +2091,7 @@ fn r_source_editor_tab_completion_execution_switching_dismissal_and_undo() {
         source_revision: "summ".into(),
         object_columns: Some(("df".into(), vec![("new_col".into(), "numeric".into())])),
         namespace_items: None,
+        argument_items: None,
     };
     let _ = h.state_mut().scientific._tx.send(msg);
     poll_messages(h.state_mut());
