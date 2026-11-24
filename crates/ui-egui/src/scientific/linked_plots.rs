@@ -146,9 +146,12 @@ pub(super) fn apply_rendered_plot(app: &mut crate::VectorcraftApp, rendered: Ren
         let result = create_rendered_plot(app, &variable, &svg, label, *width_mm, *height_mm);
         let ended = app.run("edit.undoGroup.end", serde_json::json!({"cancel": result.is_err()}));
         app.scientific.r_status = match (result, ended) {
-            (Ok(()), Ok(_)) => format!("Added {variable} as Panel {label}"),
+            (Ok(true), Ok(_)) => format!("Added {variable} as Panel {label}"),
+            (Ok(false), Ok(_)) => format!(
+                "Added {variable} as Panel {label}; the artboard has no free space, so the graph was placed beyond its right edge for manual placement."
+            ),
             (Err(error), _) => format!("Could not add {variable}: {error}"),
-            (Ok(()), Err(error)) => format!("Plot was inserted, but its undo group could not close: {error}"),
+            (Ok(_), Err(error)) => format!("Plot was inserted, but its undo group could not close: {error}"),
         };
         return;
     }
@@ -359,7 +362,7 @@ fn create_rendered_plot(
     label: &str,
     width_mm: f64,
     height_mm: f64,
-) -> Result<(), String> {
+) -> Result<bool, String> {
     #[cfg(test)]
     let started = std::time::Instant::now();
     // Import before creating a document or artboard, so invalid SVG leaves the
@@ -405,17 +408,26 @@ fn create_rendered_plot(
             "id": panel_id, "name": persistent_panel_name(&metadata, width_mm, height_mm, ResizeMode::Reflow)
         }),
     )?;
-    let index = app.scientific.linked_panels.iter().filter(|panel| panel.document_uid == document_uid).count();
     // The panel contains exactly the generated group and its label. Their
     // bounds were already measured before grouping; avoid walking every point
     // in the new panel a second time.
     let panel_bounds = bounds.union(label_bounds);
-    let step_y = panel_bounds.height() + 18.0;
-    let rows_per_column = ((board.height() + 18.0) / step_y).floor().max(1.0) as usize;
-    let column = index / rows_per_column;
-    let row = index % rows_per_column;
-    let target_x = board.x0 + column as f64 * width_mm * DOC_POINTS_PER_MM;
-    let target_y = board.y0 + row as f64 * step_y;
+    let occupied: Vec<_> = app
+        .scientific
+        .linked_panels
+        .iter()
+        .filter(|panel| panel.document_uid == document_uid)
+        .filter_map(|panel| bounds_of(app, panel.panel_id))
+        .filter(|bounds| rectangles_overlap(*bounds, board))
+        .collect();
+    let placement = find_graph_placement(board, panel_bounds.width(), panel_bounds.height(), &occupied);
+    let (target_x, target_y, fits_artboard) = placement.map_or_else(
+        || {
+            let rightmost = occupied.iter().map(|rect| rect.x1).fold(board.x1, f64::max);
+            (rightmost + GRAPH_PLACEMENT_GAP, board.y0 + GRAPH_PLACEMENT_MARGIN, false)
+        },
+        |(x, y)| (x, y, true),
+    );
     app.run(
         "object.move",
         serde_json::json!({
@@ -440,7 +452,67 @@ fn create_rendered_plot(
             started.elapsed().as_secs_f64() * 1000.0 - marked_ms
         );
     }
-    Ok(())
+    Ok(fits_artboard)
+}
+
+const GRAPH_PLACEMENT_MARGIN: f64 = 18.0;
+const GRAPH_PLACEMENT_GAP: f64 = 18.0;
+
+/// Find the first non-overlapping top-left position, searching rows from top to bottom and each
+/// row from left to right. Candidate coordinates come from artboard margins and occupied bounds,
+/// so a free rectangle can be found without sampling or depending on screen zoom.
+fn find_graph_placement(board: vectorcraft_geom::Rect, width: f64, height: f64, occupied: &[vectorcraft_geom::Rect]) -> Option<(f64, f64)> {
+    if !board.x0.is_finite()
+        || !board.y0.is_finite()
+        || !board.x1.is_finite()
+        || !board.y1.is_finite()
+        || !width.is_finite()
+        || !height.is_finite()
+        || width <= 0.0
+        || height <= 0.0
+    {
+        return None;
+    }
+    let min_x = board.x0 + GRAPH_PLACEMENT_MARGIN;
+    let min_y = board.y0 + GRAPH_PLACEMENT_MARGIN;
+    let max_x = board.x1 - GRAPH_PLACEMENT_MARGIN - width;
+    let max_y = board.y1 - GRAPH_PLACEMENT_MARGIN - height;
+    if min_x > max_x || min_y > max_y {
+        return None;
+    }
+    let mut xs = vec![min_x];
+    let mut ys = vec![min_y];
+    for rect in occupied.iter().copied().filter(|rect| rectangles_overlap(*rect, board)) {
+        if rect.x1.is_finite() {
+            xs.push(rect.x1 + GRAPH_PLACEMENT_GAP);
+        }
+        if rect.y1.is_finite() {
+            ys.push(rect.y1 + GRAPH_PLACEMENT_GAP);
+        }
+    }
+    xs.retain(|x| x.is_finite() && *x >= min_x && *x <= max_x);
+    ys.retain(|y| y.is_finite() && *y >= min_y && *y <= max_y);
+    xs.sort_by(f64::total_cmp);
+    xs.dedup_by(|a, b| (*a - *b).abs() < f64::EPSILON);
+    ys.sort_by(f64::total_cmp);
+    ys.dedup_by(|a, b| (*a - *b).abs() < f64::EPSILON);
+    for y in ys {
+        for &x in &xs {
+            let candidate = vectorcraft_geom::Rect::new(x, y, x + width, y + height);
+            if !occupied.iter().any(|rect| rectangles_overlap_with_gap(candidate, *rect)) {
+                return Some((x, y));
+            }
+        }
+    }
+    None
+}
+
+fn rectangles_overlap_with_gap(a: vectorcraft_geom::Rect, b: vectorcraft_geom::Rect) -> bool {
+    a.x0 < b.x1 + GRAPH_PLACEMENT_GAP && a.x1 + GRAPH_PLACEMENT_GAP > b.x0 && a.y0 < b.y1 + GRAPH_PLACEMENT_GAP && a.y1 + GRAPH_PLACEMENT_GAP > b.y0
+}
+
+fn rectangles_overlap(a: vectorcraft_geom::Rect, b: vectorcraft_geom::Rect) -> bool {
+    a.x0 < b.x1 && a.x1 > b.x0 && a.y0 < b.y1 && a.y1 > b.y0
 }
 
 fn bounds_of(app: &crate::VectorcraftApp, id: u64) -> Option<vectorcraft_geom::Rect> {
@@ -454,7 +526,113 @@ mod tests {
     use vectorcraft_doc::{AppearanceItem, Node, NodeId, NodeKind};
 
     use super::apply_rendered_plot;
+    use super::{GRAPH_PLACEMENT_GAP, GRAPH_PLACEMENT_MARGIN, bounds_of, find_graph_placement};
     use crate::scientific::{PanelAction, RenderedPlot};
+
+    #[test]
+    fn automatic_graph_placement_is_row_major_and_uses_actual_obstacle_bounds() {
+        use vectorcraft_geom::Rect;
+
+        let board = Rect::new(0.0, 0.0, 500.0, 400.0);
+        assert_eq!(find_graph_placement(board, 100.0, 80.0, &[]), Some((GRAPH_PLACEMENT_MARGIN, GRAPH_PLACEMENT_MARGIN)));
+
+        let first = Rect::new(18.0, 18.0, 118.0, 98.0);
+        assert_eq!(find_graph_placement(board, 100.0, 80.0, &[first]), Some((136.0, 18.0)));
+
+        let narrow_board = Rect::new(0.0, 0.0, 260.0, 190.0);
+        let wide_first = Rect::new(18.0, 18.0, 218.0, 98.0);
+        assert_eq!(find_graph_placement(narrow_board, 100.0, 50.0, &[wide_first]), Some((18.0, 116.0)));
+
+        // The first graph is narrower than the incoming one. Its right edge, not a fixed column
+        // width, determines the earliest valid position before the second graph.
+        let narrow = Rect::new(18.0, 18.0, 68.0, 78.0);
+        let second = Rect::new(100.0, 18.0, 180.0, 78.0);
+        assert_eq!(find_graph_placement(board, 100.0, 50.0, &[narrow, second]), Some((198.0, 18.0)));
+
+        // A rotated graph's axis-aligned document bounds are a conservative occupied region.
+        let rotated_bounds = Rect::new(18.0, 18.0, 150.0, 110.0);
+        assert_eq!(find_graph_placement(board, 100.0, 70.0, &[rotated_bounds]), Some((168.0, 18.0)));
+
+        let moved = Rect::new(300.0, 250.0, 420.0, 320.0);
+        assert_eq!(find_graph_placement(board, 100.0, 80.0, &[moved]), Some((18.0, 18.0)));
+        assert_eq!(find_graph_placement(Rect::new(0.0, 0.0, 120.0, 100.0), 100.0, 80.0, &[]), None);
+
+        let fully_occupied =
+            Rect::new(GRAPH_PLACEMENT_MARGIN, GRAPH_PLACEMENT_MARGIN, board.x1 - GRAPH_PLACEMENT_MARGIN, board.y1 - GRAPH_PLACEMENT_MARGIN);
+        assert_eq!(find_graph_placement(board, 100.0, 80.0, &[fully_occupied]), None);
+    }
+
+    #[test]
+    fn automatic_graph_placement_uses_open_space_after_manual_move() {
+        let mut app = crate::VectorcraftApp::new(vectorcraft_engine::Session::new(), Default::default());
+        app.run("file.new", json!({"width": 400.0, "height": 250.0})).unwrap();
+        let insert = |app: &mut crate::VectorcraftApp, variable: &str, label: &str, width: u32| {
+            apply_rendered_plot(
+                app,
+                RenderedPlot {
+                    variable: variable.into(),
+                    svg: format!(
+                        "<svg xmlns='http://www.w3.org/2000/svg' width='{width}pt' height='60pt'><rect width='{width}' height='60' fill='white'/></svg>"
+                    ),
+                    plots: Vec::new(),
+                    action: PanelAction::Create { label: label.into(), width_mm: 60.0, height_mm: 25.0 },
+                },
+            );
+        };
+        insert(&mut app, "plot_A", "A", 100);
+        assert!(app.scientific.r_status.starts_with("Added plot_A"), "{}", app.scientific.r_status);
+        let first = app.scientific.linked_panels[0].clone();
+        let initial_first = bounds_of(&app, first.panel_id).unwrap();
+        assert_eq!((initial_first.x0, initial_first.y0), (GRAPH_PLACEMENT_MARGIN, GRAPH_PLACEMENT_MARGIN));
+        app.run("object.move", json!({"ids": [first.panel_id], "dx": 220.0, "dy": 100.0})).unwrap();
+        let moved_first = bounds_of(&app, first.panel_id).unwrap();
+
+        insert(&mut app, "plot_B", "B", 120);
+        assert!(app.scientific.r_status.starts_with("Added plot_B"), "{}", app.scientific.r_status);
+        let second = app.scientific.linked_panels[1].clone();
+        let second_bounds = bounds_of(&app, second.panel_id).unwrap();
+        assert_eq!((second_bounds.x0, second_bounds.y0), (GRAPH_PLACEMENT_MARGIN, GRAPH_PLACEMENT_MARGIN));
+        assert_eq!(bounds_of(&app, first.panel_id), Some(moved_first), "existing graph was repositioned");
+        assert!(second_bounds.x1 + GRAPH_PLACEMENT_GAP <= moved_first.x0 || second_bounds.x0 >= moved_first.x1 + GRAPH_PLACEMENT_GAP);
+        assert!(second_bounds.y1 + GRAPH_PLACEMENT_GAP <= moved_first.y0 || second_bounds.y0 >= moved_first.y1 + GRAPH_PLACEMENT_GAP);
+
+        let expected_after_redo = second_bounds;
+        app.run("edit.undo", json!({})).unwrap();
+        assert!(app.session.doc().unwrap().doc.node(NodeId(second.panel_id)).is_none());
+        assert_eq!(bounds_of(&app, first.panel_id), Some(moved_first));
+        app.run("edit.redo", json!({})).unwrap();
+        let redone = bounds_of(&app, second.panel_id).unwrap();
+        assert_eq!(redone, expected_after_redo);
+        assert_eq!(bounds_of(&app, first.panel_id), Some(moved_first));
+
+        // Keep the test's document positions in artboard coordinates and independent of view zoom.
+        let board = app.session.doc().unwrap().doc.artboards[0].rect;
+        assert!(second_bounds.x0 >= board.x0 && second_bounds.y0 >= board.y0);
+        assert!(second_bounds.x1 <= board.x1 && second_bounds.y1 <= board.y1);
+    }
+
+    #[test]
+    fn automatic_graph_placement_keeps_oversized_graph_with_manual_placement_notice() {
+        let mut app = crate::VectorcraftApp::new(vectorcraft_engine::Session::new(), Default::default());
+        app.run("file.new", json!({"width": 100.0, "height": 80.0})).unwrap();
+        apply_rendered_plot(
+            &mut app,
+            RenderedPlot {
+                variable: "plot_large".into(),
+                svg: "<svg xmlns='http://www.w3.org/2000/svg' width='300pt' height='200pt'><rect width='300' height='200' fill='white'/></svg>"
+                    .into(),
+                plots: Vec::new(),
+                action: PanelAction::Create { label: "Large".into(), width_mm: 100.0, height_mm: 70.0 },
+            },
+        );
+        assert!(app.scientific.r_status.contains("no free space"), "{}", app.scientific.r_status);
+        assert!(app.scientific.r_status.contains("manual placement"), "{}", app.scientific.r_status);
+        assert_eq!(app.scientific.linked_panels.len(), 1, "overflow must preserve the generated graph");
+        let panel = &app.scientific.linked_panels[0];
+        let bounds = bounds_of(&app, panel.panel_id).unwrap();
+        let board = app.session.doc().unwrap().doc.artboards[0].rect;
+        assert!(bounds.x0 >= board.x1, "overflow graph should be placed outside the artboard: {bounds:?}, {board:?}");
+    }
 
     #[test]
     #[ignore = "requires RVS_UMAP_SVG to point to a generated local benchmark SVG"]
