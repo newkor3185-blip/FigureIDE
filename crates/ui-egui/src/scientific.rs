@@ -4038,7 +4038,9 @@ mod tests {
         let panel = &app.scientific.linked_panels[0];
         let panel_id = panel.panel_id;
         assert!(state.selection.contains(vectorcraft_doc::NodeId(panel.panel_id)));
-        assert!((state.doc.bounds_of(&[vectorcraft_doc::NodeId(panel.panel_id)], false).unwrap().x0 - board.x0).abs() < 0.1);
+        let panel_bounds = state.doc.bounds_of(&[vectorcraft_doc::NodeId(panel.panel_id)], false).unwrap();
+        assert!((panel_bounds.x0 - (board.x0 + super::linked_plots::GRAPH_PLACEMENT_MARGIN)).abs() < 0.1);
+        assert!((panel_bounds.y0 - (board.y0 + super::linked_plots::GRAPH_PLACEMENT_MARGIN)).abs() < 0.1);
         app.run("edit.undo", serde_json::json!({})).unwrap();
         let undone = app.session.doc().unwrap();
         assert!(undone.doc.node(vectorcraft_doc::NodeId(panel_id)).is_none());

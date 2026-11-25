@@ -455,7 +455,7 @@ fn create_rendered_plot(
     Ok(fits_artboard)
 }
 
-const GRAPH_PLACEMENT_MARGIN: f64 = 18.0;
+pub(super) const GRAPH_PLACEMENT_MARGIN: f64 = 18.0;
 const GRAPH_PLACEMENT_GAP: f64 = 18.0;
 
 /// Find the first non-overlapping top-left position, searching rows from top to bottom and each
