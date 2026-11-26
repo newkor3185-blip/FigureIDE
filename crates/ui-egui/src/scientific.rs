@@ -3854,7 +3854,7 @@ mod tests {
     }
 
     #[test]
-    fn new_column_plot_aligns_to_a4_left_edge_and_reuses_the_artboard() {
+    fn new_column_plot_uses_a4_margin_and_reuses_the_artboard() {
         let mut app = crate::VectorcraftApp::new(vectorcraft_engine::Session::new(), Default::default());
         app.run("file.new", serde_json::json!({"width": "210 mm", "height": "297 mm", "backgroundContents": "white"})).unwrap();
         for label in ["A", "B"] {
@@ -3877,7 +3877,8 @@ mod tests {
         let first = &app.scientific.linked_panels[0];
         let panel = state.doc.bounds_of(&[vectorcraft_doc::NodeId(first.panel_id)], false).unwrap();
         let graphic = state.doc.bounds_of(&[vectorcraft_doc::NodeId(first.generated_id)], false).unwrap();
-        assert!((panel.x0 - board.x0).abs() < 0.1, "panel left {panel:?}, board {board:?}");
+        assert!((panel.x0 - (board.x0 + super::linked_plots::GRAPH_PLACEMENT_MARGIN)).abs() < 0.1, "panel left {panel:?}, board {board:?}");
+        assert!((panel.y0 - (board.y0 + super::linked_plots::GRAPH_PLACEMENT_MARGIN)).abs() < 0.1, "panel top {panel:?}, board {board:?}");
         assert!((graphic.width() / super::DOC_POINTS_PER_MM - 70.0).abs() < 0.1, "graphic width: {graphic:?}");
         assert!(state.selection.contains(vectorcraft_doc::NodeId(app.scientific.linked_panels[1].panel_id)));
         assert!(app.scientific.linked_panels.iter().all(|panel| panel.small_figure_typography));
@@ -4038,7 +4039,9 @@ mod tests {
         let panel = &app.scientific.linked_panels[0];
         let panel_id = panel.panel_id;
         assert!(state.selection.contains(vectorcraft_doc::NodeId(panel.panel_id)));
-        assert!((state.doc.bounds_of(&[vectorcraft_doc::NodeId(panel.panel_id)], false).unwrap().x0 - board.x0).abs() < 0.1);
+        let panel_bounds = state.doc.bounds_of(&[vectorcraft_doc::NodeId(panel.panel_id)], false).unwrap();
+        assert!((panel_bounds.x0 - (board.x0 + super::linked_plots::GRAPH_PLACEMENT_MARGIN)).abs() < 0.1);
+        assert!((panel_bounds.y0 - (board.y0 + super::linked_plots::GRAPH_PLACEMENT_MARGIN)).abs() < 0.1);
         app.run("edit.undo", serde_json::json!({})).unwrap();
         let undone = app.session.doc().unwrap();
         assert!(undone.doc.node(vectorcraft_doc::NodeId(panel_id)).is_none());
