@@ -28,14 +28,14 @@ on:
       version:
         description: 'Expected application/Cargo version'
         required: true
-        default: '0.2.1-beta.1'
+        default: '0.3.0'
         type: string
       source_ref:
         description: 'Approved source branch, tag, or commit (default: current workflow ref)'
         required: false
         type: string
       draft_release:
-        description: 'Create or update the prerelease draft after all four packages validate (requires the exact version tag)'
+        description: 'Create or update an unpublished draft after all four packages validate (requires the exact version tag)'
         required: true
         default: false
         type: boolean
@@ -44,7 +44,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: figureide-beta-${{ github.event.pull_request.number || inputs.version || github.sha }}
+  group: figureide-release-${{ github.event.pull_request.number || inputs.version || github.sha }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
@@ -65,7 +65,7 @@ jobs:
       - name: Validate source ref and version
         id: source
         env:
-          REQUESTED_VERSION: ${{ inputs.version || '0.2.1-beta.1' }}
+          REQUESTED_VERSION: ${{ inputs.version || '0.3.0' }}
           REQUESTED_SOURCE_REF: ${{ inputs.source_ref }}
           PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
           PR_HEAD_REPO: ${{ github.event.pull_request.head.repo.full_name }}
@@ -207,7 +207,7 @@ jobs:
           retention-days: 30
 
   draft-release:
-    name: Create prerelease draft
+    name: Create unpublished release draft
     if: ${{ github.event_name == 'workflow_dispatch' && inputs.draft_release }}
     needs: [prepare, collect-and-validate]
     runs-on: ubuntu-24.04
@@ -242,15 +242,24 @@ jobs:
           assets+=("release-artifacts/macos-intel/FigureIDE-v${RELEASE_VERSION}-macOS-Intel.zip")
           assets+=("release-artifacts/SHA256SUMS")
           for asset in "${assets[@]}"; do test -s "$asset"; done
+          prerelease=false
+          prerelease_flag=()
+          if [[ "$RELEASE_VERSION" == *-* ]]; then
+            prerelease=true
+            prerelease_flag+=(--prerelease)
+          fi
           if gh release view "$RELEASE_TAG" --json isDraft >/tmp/figureide-existing-release.json 2>/dev/null; then
             is_draft="$(jq -r '.isDraft' /tmp/figureide-existing-release.json)"
             if [[ "$is_draft" != true ]]; then
               echo "Refusing to modify published release $RELEASE_TAG." >&2
               exit 1
             fi
-            gh release edit "$RELEASE_TAG" --title "FigureIDE v${RELEASE_VERSION}" --notes-file "$notes" --draft --prerelease
+            gh release edit "$RELEASE_TAG" --title "FigureIDE v${RELEASE_VERSION}" --notes-file "$notes" --draft
             gh release upload "$RELEASE_TAG" "${assets[@]}" --clobber
           else
             gh release create "$RELEASE_TAG" "${assets[@]}" --target "$SOURCE_SHA" \
-              --title "FigureIDE v${RELEASE_VERSION}" --notes-file "$notes" --draft --prerelease
+              --title "FigureIDE v${RELEASE_VERSION}" --notes-file "$notes" --draft "${prerelease_flag[@]}"
           fi
+          release_id="$(gh api "repos/$GITHUB_REPOSITORY/releases/tags/$RELEASE_TAG" --jq .id)"
+          gh api "repos/$GITHUB_REPOSITORY/releases/$release_id" --method PATCH \
+            -F draft=true -F "prerelease=$prerelease"

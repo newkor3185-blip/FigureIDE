@@ -260,6 +260,30 @@ mod native {
         }
 
         #[test]
+        fn v0_3_0_stable_is_offered_to_installed_beta_on_both_channels() {
+            let answer = body(vec![
+                release(
+                    "figureide-v0.3.0",
+                    false,
+                    false,
+                    &[
+                        "FigureIDE-v0.3.0-Windows-x64.zip",
+                        "FigureIDE-v0.3.0-Linux-x86_64.tar.gz",
+                        "FigureIDE-v0.3.0-macOS-AppleSilicon.zip",
+                        "FigureIDE-v0.3.0-macOS-Intel.zip",
+                    ],
+                ),
+                release("figureide-v0.2.1-beta.1", true, false, &[]),
+            ]);
+
+            for channel in [Channel::Stable, Channel::Beta] {
+                let latest = newest_release(&answer, channel, "0.2.1-beta.1").unwrap().unwrap();
+                assert_eq!(latest.tag, "figureide-v0.3.0");
+                assert_eq!(latest.version.unwrap().to_string(), "0.3.0");
+            }
+        }
+
+        #[test]
         fn ignores_drafts_invalid_tags_and_other_repositories_and_never_downgrades() {
             let answer = body(vec![
                 release("figureide-v9.0.0", false, true, &[]),
@@ -285,6 +309,20 @@ mod native {
             }
             release.assets.retain(|asset| !asset.name.contains("AppleSilicon"));
             assert!(select_asset(&release, Package::MacOsArm64).is_none());
+        }
+
+        #[test]
+        fn v0_3_0_stable_assets_match_the_release_workflow_names() {
+            let assets = [
+                "FigureIDE-v0.3.0-Windows-x64.zip",
+                "FigureIDE-v0.3.0-Linux-x86_64.tar.gz",
+                "FigureIDE-v0.3.0-macOS-AppleSilicon.zip",
+                "FigureIDE-v0.3.0-macOS-Intel.zip",
+            ];
+            let release = parse_releases(&body(vec![release("figureide-v0.3.0", false, false, &assets)]), Channel::Stable).unwrap().remove(0);
+            for package in [Package::WindowsX64, Package::LinuxX86_64, Package::MacOsArm64, Package::MacOsX86_64] {
+                assert_eq!(select_asset(&release, package).unwrap().name, package.asset_name("0.3.0"));
+            }
         }
 
         #[test]

@@ -16,7 +16,7 @@ Watch FigureIDE in action — from R/ggplot2 visualization to scientific figure 
 
 **[Watch the FigureIDE demo on YouTube](https://youtu.be/ay1fmnCTgsg)**
 
-> **Status:** Pre-release / beta candidate. The native Linux x86_64 build and core R/figure workflow have been exercised on Ubuntu 26.04 under XFCE/XRDP with software rendering. Linux remains experimental: Wayland, hardware acceleration, and a complete native desktop-install path have not been validated. Windows binaries and the complete R workflow must pass release checks before being considered validated.
+> **Status:** FigureIDE v0.3.0 is being prepared as a stable release. Until it is published, use the [GitHub Releases page](https://github.com/newkor3185-blip/FigureIDE/releases) for available downloads. Linux x86_64 remains experimental: Wayland, hardware acceleration, and a complete native desktop-install path have not been validated.
 
 ## Features
 
@@ -28,18 +28,19 @@ Watch FigureIDE in action — from R/ggplot2 visualization to scientific figure 
 - **Optional R workspace snapshots:** save `.GlobalEnv` into `workspace/workspace.RData` and explicitly load it later.
 - **SVG/PDF exports:** aimed at publication workflows; verify final artwork in your target journal/export viewer.
 
-## FigureIDE v0.2.0-beta.1 downloads
+## Releases and downloads
 
-This is an early public beta. Release assets become available after the multi-platform build and
-archive checks pass. The release process validates that every archive contains the same source
-commit and publishes only a draft until it is explicitly reviewed and published.
+Find currently published packages on the [GitHub Releases page](https://github.com/newkor3185-blip/FigureIDE/releases).
+The v0.3.0 release is in preparation; its expected archive names are listed below and will be
+available after the release is approved and published. The release workflow validates all four
+packages against the same source commit and generates `SHA256SUMS` before a release can be reviewed.
 
-| Platform | Package | Download |
+| Platform | Package | Expected v0.3.0 asset |
 |---|---|---|
-| Windows x64 | Portable ZIP | [FigureIDE-v0.2.0-beta.1-Windows-x64.zip](https://github.com/newkor3185-blip/FigureIDE/releases/download/figureide-v0.2.0-beta.1/FigureIDE-v0.2.0-beta.1-Windows-x64.zip) |
-| Linux x86_64 | Portable tar.gz | [FigureIDE-v0.2.0-beta.1-Linux-x86_64.tar.gz](https://github.com/newkor3185-blip/FigureIDE/releases/download/figureide-v0.2.0-beta.1/FigureIDE-v0.2.0-beta.1-Linux-x86_64.tar.gz) |
-| macOS Apple Silicon | App ZIP | [FigureIDE-v0.2.0-beta.1-macOS-AppleSilicon.zip](https://github.com/newkor3185-blip/FigureIDE/releases/download/figureide-v0.2.0-beta.1/FigureIDE-v0.2.0-beta.1-macOS-AppleSilicon.zip) |
-| macOS Intel | App ZIP | [FigureIDE-v0.2.0-beta.1-macOS-Intel.zip](https://github.com/newkor3185-blip/FigureIDE/releases/download/figureide-v0.2.0-beta.1/FigureIDE-v0.2.0-beta.1-macOS-Intel.zip) |
+| Windows x64 | Portable ZIP | `FigureIDE-v0.3.0-Windows-x64.zip` |
+| Linux x86_64 | Portable tar.gz | `FigureIDE-v0.3.0-Linux-x86_64.tar.gz` |
+| macOS Apple Silicon | App ZIP | `FigureIDE-v0.3.0-macOS-AppleSilicon.zip` |
+| macOS Intel | App ZIP | `FigureIDE-v0.3.0-macOS-Intel.zip` |
 
 All four packages include `LICENSE-MIT`, `LICENSE-APACHE`, `NOTICE`, `ASSETS.md`, dependency
 license notices, and bundled asset license texts. Verify downloads with the release's `SHA256SUMS`.
@@ -69,7 +70,7 @@ A **project** is a directory; an individual editable **figure** is a `.fide` fil
 
 ## Install (Windows)
 
-1. Open [Releases](https://github.com/newkor3185-blip/FigureIDE/releases) and download `FigureIDE-v0.2.0-beta.1-Windows-x64.zip` when the prerelease is published.
+1. Open [Releases](https://github.com/newkor3185-blip/FigureIDE/releases) and download the latest Windows x64 portable ZIP. The expected v0.3.0 filename is `FigureIDE-v0.3.0-Windows-x64.zip` once published.
 2. Extract it to a local folder and start `FigureIDE.exe`.
 3. R is optional. Install it separately only if you want to run analysis scripts, manage an R workspace, or re-render R-linked figures. Vector editing, saving `.fide` files, and ordinary SVG/PDF export work without R.
 
@@ -147,8 +148,9 @@ tested on Ubuntu 26.04 LTS in XFCE over XRDP. XRDP selected Mesa llvmpipe softwa
 does not validate GPU acceleration. See [Linux validation and limitations](docs/figureide-linux.md)
 for the exact checks and outstanding items.
 
-Download `FigureIDE-v0.2.0-beta.1-Linux-x86_64.tar.gz` from [Releases](https://github.com/newkor3185-blip/FigureIDE/releases),
-extract it, and run `./FigureIDE`. The manually run [FigureIDE Linux workflow](.github/workflows/figureide-linux-release.yml)
+Download the latest Linux x86_64 portable tar.gz from [Releases](https://github.com/newkor3185-blip/FigureIDE/releases).
+The expected v0.3.0 filename is `FigureIDE-v0.3.0-Linux-x86_64.tar.gz` once published. Extract it
+and run `./FigureIDE`. The manually run [FigureIDE Linux workflow](.github/workflows/figureide-linux-release.yml)
 also keeps a development archive as an Actions artifact. To build locally on Ubuntu or a compatible
 x86_64 Linux system, install the compiler and native development headers:
 
