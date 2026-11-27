@@ -21,7 +21,7 @@ jobs:
     timeout-minutes: 90
     steps:
       - name: Check out source
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           ref: ${{ inputs.source_sha || github.sha }}
 
@@ -123,7 +123,7 @@ jobs:
           sha256sum "$FIGUREIDE_ARCHIVE"
 
       - name: Upload Linux archive
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: FigureIDE-Linux-x86_64
           path: ${{ inputs.release_version && format('dist/FigureIDE-v{0}-Linux-x86_64.tar.gz', inputs.release_version) || 'dist/FigureIDE-Linux-x86_64.tar.gz' }}
