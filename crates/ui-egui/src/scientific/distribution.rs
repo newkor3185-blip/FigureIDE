@@ -294,6 +294,7 @@ mod tests {
             release_workflow.lines().any(|line| line.trim() == "workflow_dispatch:"),
             "Coordinated release workflow must support manual dispatch"
         );
+        assert!(release_workflow.contains("default: '0.3.0'"), "Manual release defaults to the prepared stable version");
         assert!(release_workflow.contains("      draft_release:\n") && release_workflow.contains("        default: false"));
 
         let windows_job = workflow_job(&release_workflow, "windows");
@@ -318,6 +319,7 @@ mod tests {
 
         let prepare_job = workflow_job(&release_workflow, "prepare");
         assert!(prepare_job.contains("tag_name=\"figureide-v$REQUESTED_VERSION\""), "Only the FigureIDE version tag is a release tag");
+        assert!(prepare_job.contains("REQUESTED_VERSION: ${{ inputs.version || '0.3.0' }}"), "The default input and dispatch fallback must agree");
         assert!(prepare_job.contains("echo \"source_sha=$source_sha\""), "The release workflow must pin the approved source commit");
         assert!(prepare_job.contains("GITHUB_REF_TYPE\" != tag") && prepare_job.contains("GITHUB_REF_NAME\" != \"$tag_name\""));
         assert!(prepare_job.contains("DRAFT_RELEASE\" == true"), "Draft publication must be explicitly requested");
@@ -326,7 +328,18 @@ mod tests {
         assert!(draft_job.contains("github.event_name == 'workflow_dispatch' && inputs.draft_release"));
         assert!(draft_job.contains("needs: [prepare, collect-and-validate]"), "Draft creation must wait for successful validation");
         assert!(draft_job.contains("gh release create"), "The coordinated workflow must create the optional draft release");
-        assert!(draft_job.contains("--draft --prerelease"), "Automated release creation must remain an unpublished draft");
+        assert!(
+            draft_job.contains("if [[ \"$RELEASE_VERSION\" == *-* ]]; then") && draft_job.contains("prerelease_flag+=(--prerelease)"),
+            "Only SemVer prereleases are marked prerelease"
+        );
+        assert!(
+            draft_job.contains("--draft \"${prerelease_flag[@]}\""),
+            "Release creation must remain an unpublished draft with conditional prerelease status"
+        );
+        assert!(
+            draft_job.contains("-F draft=true -F \"prerelease=$prerelease\""),
+            "Existing drafts must also receive the correct stable or prerelease flag"
+        );
         assert!(draft_job.contains("contents: write"), "Only the draft publishing job needs release write access");
         assert!(draft_job.contains("Refusing to modify published release"), "A published release must never be overwritten");
 
